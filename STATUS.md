@@ -33,6 +33,9 @@ See `loop/goal.json` for the machine-readable goal, invariants, and milestones.
 - **`internal/forge`** — the GitHub side as an interface (no merge method) with a
   recording fake.
 - **`internal/ledger`** — append-only JSONL run events, wired into the loop.
+- **`internal/worktree`** — creates, lists, and removes an isolated git worktree
+  per issue (idempotent: an existing worktree for a branch is reused). Tested
+  against a temporary git repo.
 
 The whole loop, including every failure path, runs with no model and no network.
 
