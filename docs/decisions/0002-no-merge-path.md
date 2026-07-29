@@ -5,10 +5,11 @@ Status: Accepted, implemented.
 ## Context
 
 The product's core promise is that it proposes changes but a human disposes of
-them. "Claude proposes; Actions dispose." A tool that can merge its own work, or
-that has the capability sitting one flag away, cannot make that promise
+them: the agent proposes, a human disposes. A tool that can merge its own work,
+or that has the capability sitting one flag away, cannot make that promise
 credibly, and a security reviewer evaluating whether to grant it repo access
-will look for exactly this.
+will look for exactly this. The promise is independent of which model backs the
+engine.
 
 ## Decision
 

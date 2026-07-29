@@ -13,9 +13,10 @@ repo's own gate does), and there is no code path that merges.
 
 ## Principles
 
-- **Claude proposes; Actions dispose.** The agent's strongest action is opening a
-  pull request. It never merges, never pushes to a protected branch, and holds no
-  deploy or production credential. Merge is always a human decision.
+- **The agent proposes; a human disposes.** The agent's strongest action is
+  opening a pull request. It never merges, never pushes to a protected branch,
+  and holds no deploy or production credential. Merge is always a human decision.
+  This holds whatever model backs the engine.
 - **Gate-first.** A loop is `goal -> act -> grade -> repeat`, where "grade" is the
   repo's own gate command (typecheck, tests, build). The engineering is the gate,
   not the loop. A repo with no gate is refused.
