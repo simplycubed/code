@@ -1,0 +1,34 @@
+{
+  "goal": "Build the SimplyCubed Code foundation: a gate-first, fake-engine-testable Go core so the full issue-to-PR loop runs with zero LLM spend, plus the written spec. Engine-dependent design (role prompts, budget/stall thresholds, Action packaging) is documented, not coded, because the blocked S3 Azure replay is what validates those assumptions.",
+  "date": "2026-07-30",
+  "progress": "M1 through M6 complete on branch build/foundation (PR #2), every commit green. Remaining work is either blocked on Azure access (S1-S4) or correctly deferred to docs pending the S3 replay. The engine-independent core is done.",
+  "invariants": [
+    "claude-proposes-actions-dispose: the loop only ever opens a pull request; it never merges and holds no deploy credential.",
+    "gate-first: no milestone is done until `make check` is green, and it must be green at every commit, not only at the tip.",
+    "gate-required: a target repo with no `gate:` configured is refused; an ungated loop is not built.",
+    "no-secrets-in-repo: no session-private material (production-repo gaps, host credentials, Azure resource or deployment names, keys) enters this public repository. State the conclusion, never the private fact.",
+    "engine-independence: the loop, gate, config, state machine, and domain types compile and test without any real model call, behind a Runner interface with a deterministic fake."
+  ],
+  "milestones": [
+    { "id": "M1", "title": "Repo foundation, gate, and CI", "status": "done" },
+    { "id": "M2", "title": "Domain types, Runner interface, fake engine", "status": "done" },
+    { "id": "M3", "title": "Gate runner, config, label state machine", "status": "done" },
+    { "id": "M4", "title": "Loop engine and the honesty test", "status": "done" },
+    { "id": "M5", "title": "Engine-dependent design as ADRs (docs, not code)", "status": "done" },
+    { "id": "M6", "title": "JSONL run ledger, wired into the loop", "status": "done" }
+  ],
+  "blocked": [
+    {
+      "id": "S1-azure-auth",
+      "reason": "Needs the Azure OpenAI resource name, the gpt-5.4 and gpt-5.4-mini deployment names, and AZURE_OPENAI_API_KEY provided by the user. Not to be worked around by reading any on-disk credential.",
+      "unblocks": ["S2-context-file", "S3-replay", "S4-negative-control"]
+    },
+    {
+      "id": "S3-replay",
+      "reason": "The high-signal spike: revert known-good commits in a real private target repo on branches and see whether a codex-on-Azure loop reproduces green-gate PRs. Blocked by S1. This is what the pending ADRs (0003, 0004, 0005) wait on before they are coded.",
+      "unblocks": []
+    }
+  ],
+  "deferred_to_docs": "The engine adapter, role prompts, verdict schema, budget/stall numbers, and Action packaging are recorded in docs/decisions as pending decisions rather than coded, because their correctness depends on real model behavior that S3 measures.",
+  "notes": "First action of any continued pass: check whether the Azure key file exists (existence only, never read it). If it appeared, pivot to S1 then S2 before any further scaffolding. If it did not, and no unblocked engine-independent work remains, stop the loop rather than spin."
+}

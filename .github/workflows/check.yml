@@ -1,0 +1,24 @@
+# The repository's own gate, run in CI. This is NOT yet configured as a required
+# status check on main (that is a deliberate human decision left for a maintainer,
+# to avoid a solo self-approval deadlock during early scaffolding). See STATUS.md.
+#
+# Follow-up: pin these actions by commit SHA once the repo goes past scaffolding.
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+      - run: make check
