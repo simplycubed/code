@@ -1,6 +1,7 @@
 package loop
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -12,6 +13,7 @@ import (
 	enginefake "github.com/simplycubed/code/internal/engine/fake"
 	forgefake "github.com/simplycubed/code/internal/forge/fake"
 	"github.com/simplycubed/code/internal/gate"
+	"github.com/simplycubed/code/internal/ledger"
 	"github.com/simplycubed/code/internal/state"
 )
 
@@ -102,6 +104,37 @@ func TestHonestyStallBlocksAndOpensNoPR(t *testing.T) {
 	}
 	if !strings.Contains(res.Reason, "stall") {
 		t.Fatalf("reason = %q, expected it to mention the stall", res.Reason)
+	}
+}
+
+func TestLedgerRecordsRoundsAndOutcome(t *testing.T) {
+	dir := t.TempDir()
+	var buf bytes.Buffer
+	eng, _ := newEngine(dir, enginefake.New(
+		enginefake.Step{Summary: "looked, no change"},
+		enginefake.Step{Summary: "fix", Apply: writeFixed},
+	))
+	eng.Ledger = ledger.New(&buf)
+	eng.Cfg.RunID = "run-abc"
+
+	if _, err := eng.Run(context.Background(), domain.Issue{Repo: "o/r", Number: 7}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	out := buf.String()
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	// two round lines (fail then pass) plus one run_end line.
+	if len(lines) != 3 {
+		t.Fatalf("got %d ledger lines want 3:\n%s", len(lines), out)
+	}
+	if !strings.Contains(out, "run-abc") {
+		t.Fatal("ledger missing run id")
+	}
+	if !strings.Contains(lines[0], "\"gate\":\"fail\"") {
+		t.Fatalf("first round should be fail: %s", lines[0])
+	}
+	if !strings.Contains(lines[2], "\"outcome\":\"pr_opened\"") {
+		t.Fatalf("run_end should be pr_opened: %s", lines[2])
 	}
 }
 

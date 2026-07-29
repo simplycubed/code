@@ -12,6 +12,7 @@ import (
 	"github.com/simplycubed/code/internal/engine"
 	"github.com/simplycubed/code/internal/forge"
 	"github.com/simplycubed/code/internal/gate"
+	"github.com/simplycubed/code/internal/ledger"
 	"github.com/simplycubed/code/internal/state"
 )
 
@@ -35,6 +36,7 @@ type Config struct {
 	Branch      string
 	LabelPrefix string // default "sc"
 	MaxRounds   int    // hard cap on act/grade rounds; default 4
+	RunID       string // used in ledger events
 }
 
 // Engine runs one issue to a terminal outcome.
@@ -42,7 +44,21 @@ type Engine struct {
 	Runner engine.Runner
 	Gate   GateFunc
 	Forge  forge.Forge
+	// Ledger is optional. When set, the loop records a line per round and a
+	// terminal line per run.
+	Ledger *ledger.Writer
 	Cfg    Config
+}
+
+// log records an event if a ledger is configured; otherwise it is a no-op.
+func (e *Engine) log(iss domain.Issue, ev ledger.Event) {
+	if e.Ledger == nil {
+		return
+	}
+	ev.RunID = e.Cfg.RunID
+	ev.Repo = iss.Repo
+	ev.Issue = iss.Number
+	_ = e.Ledger.Append(ev)
 }
 
 // Result summarizes a completed run.
@@ -83,6 +99,11 @@ func (e *Engine) Run(ctx context.Context, iss domain.Issue) (Result, error) {
 
 		// Grade against the repo's own gate.
 		res := e.Gate(ctx, e.Cfg.WorkDir)
+		gateStr := "fail"
+		if res.Passed {
+			gateStr = "pass"
+		}
+		e.log(iss, ledger.Event{Phase: ledger.PhaseRound, Round: round, Gate: gateStr})
 		if res.Passed {
 			return e.openPR(ctx, iss, prefix, round)
 		}
@@ -108,15 +129,18 @@ func (e *Engine) openPR(ctx context.Context, iss domain.Issue, prefix string, ro
 		fmt.Sprintf("Closes #%d: %s", iss.Number, iss.Title),
 		"Automated change from an issue. A human reviews and merges; this loop does not.")
 	if err != nil {
+		e.log(iss, ledger.Event{Phase: ledger.PhaseRunEnd, Outcome: string(OutcomeBlocked), Reason: "open PR failed"})
 		return Result{Outcome: OutcomeBlocked, Rounds: round, Reason: "open PR failed: " + err.Error()}, err
 	}
 	// PR is open and waiting on a human: the review state.
 	_ = e.Forge.SetState(ctx, iss.Repo, iss.Number, state.Label(prefix, state.Review))
+	e.log(iss, ledger.Event{Phase: ledger.PhaseRunEnd, Outcome: string(OutcomePROpened)})
 	return Result{Outcome: OutcomePROpened, Rounds: round, PRURL: url}, nil
 }
 
 func (e *Engine) escalate(ctx context.Context, iss domain.Issue, prefix string, round int, reason string) (Result, error) {
 	_ = e.Forge.Comment(ctx, iss.Repo, iss.Number, "Blocked: "+reason)
 	_ = e.Forge.SetState(ctx, iss.Repo, iss.Number, state.Label(prefix, state.Blocked))
+	e.log(iss, ledger.Event{Phase: ledger.PhaseRunEnd, Outcome: string(OutcomeBlocked), Reason: reason})
 	return Result{Outcome: OutcomeBlocked, Rounds: round, Reason: reason}, nil
 }
