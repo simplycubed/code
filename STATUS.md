@@ -15,6 +15,35 @@ would bake in guesses.
 
 See `loop/goal.json` for the machine-readable goal, invariants, and milestones.
 
+## What is coded now (M1 through M6, all green)
+
+- **Gate and CI** (`Makefile`, `.github/workflows/check.yml`).
+- **`internal/domain`** — core types with no model or GitHub dependency.
+- **`internal/engine`** — the `Runner` interface, plus a deterministic fake that
+  drives every test.
+- **`internal/gate`** — runs a repo gate command; captures exit code, an output
+  tail, and a normalized signature for stall detection.
+- **`internal/config`** — loads `.github/simplycubed.yml` and refuses a config
+  with no `gate:`.
+- **`internal/state`** — the `sc:` label lifecycle with mutual-exclusion
+  transitions.
+- **`internal/loop`** — the engine: goal to act to grade to repeat, opening a PR
+  on success and escalating (Blocked, no PR) on a stall. Includes the honesty
+  test.
+- **`internal/forge`** — the GitHub side as an interface (no merge method) with a
+  recording fake.
+- **`internal/ledger`** — append-only JSONL run events, wired into the loop.
+
+The whole loop, including every failure path, runs with no model and no network.
+
+## What remains, and why it is not coded here
+
+Everything left is either blocked on you (the Azure spikes S1 through S4) or
+deliberately deferred to `docs/decisions` because it depends on how a real model
+behaves, which the S3 replay measures: the engine adapter, role prompts, the
+verdict schema, budget and stall numbers, and the GitHub Action packaging. This
+is the code-vs-docs line from the review, held on purpose.
+
 ## Gate
 
 `make check` is the gate: `gofmt`, `go vet`, `go build`, `go test`. It runs in
