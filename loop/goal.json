@@ -1,0 +1,78 @@
+{
+  "goal": "Build the SimplyCubed Code foundation: a gate-first, fake-engine-testable Go core so the full issue-to-PR loop runs with zero LLM spend, plus the written spec. Engine-dependent design (role prompts, budget/stall thresholds, Action packaging) is documented, not coded, because the blocked S3 Azure replay is what validates those assumptions.",
+  "date": "2026-07-30",
+  "invariants": [
+    "claude-proposes-actions-dispose: the loop only ever opens a pull request; it never merges and holds no deploy credential.",
+    "gate-first: no milestone is done until `make check` is green, and it must be green at every commit, not only at the tip.",
+    "gate-required: a target repo with no `gate:` configured is refused; an ungated loop is not built.",
+    "no-secrets-in-repo: no session-private material (production-repo gaps, host credentials, Azure resource or deployment names, keys) enters this public repository. State the conclusion, never the private fact.",
+    "engine-independence: the loop, gate, config, state machine, and domain types compile and test without any real model call, behind a Runner interface with a deterministic fake."
+  ],
+  "milestones": [
+    {
+      "id": "M1",
+      "title": "Repo foundation, gate, and CI",
+      "doneWhen": [
+        "make check is green",
+        ".github/workflows/check.yml runs the gate (not a required check yet)",
+        "loop/goal.json, STATUS.md, and docs/spec/architecture.md exist",
+        "cmd/simplycubed builds and `version` works"
+      ],
+      "status": "in_progress"
+    },
+    {
+      "id": "M2",
+      "title": "Domain types, Runner interface, fake engine",
+      "doneWhen": [
+        "internal/domain core types",
+        "internal/engine Runner interface",
+        "internal/engine/fake deterministic scripted engine",
+        "hermetic tests pass with no network"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "M3",
+      "title": "Gate runner, config, label state machine",
+      "doneWhen": [
+        "internal/gate runs a repo gate command and captures exit code, output tail, and a normalized signature",
+        "internal/config loads .github/simplycubed.yml and refuses a config with no gate",
+        "internal/state models the sc: label lifecycle with mutual exclusion",
+        "tests pass"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "M4",
+      "title": "Loop engine and the honesty test",
+      "doneWhen": [
+        "internal/loop runs goal -> act -> grade -> repeat with a two-consecutive-red stop",
+        "the loop opens a pull request only on success (via a forge interface, faked in tests)",
+        "honesty test: a fake engine that never fixes the gate ends in Blocked and opens NO pull request"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "M5",
+      "title": "Engine-dependent design as ADRs (docs, not code)",
+      "doneWhen": [
+        "ADRs for role prompt architecture, verdict schema rationale, budget and stall thresholds, GitHub Action packaging, and onboarding templates",
+        "each ADR marks itself as pending validation by the S3 Azure replay spike"
+      ],
+      "status": "pending"
+    }
+  ],
+  "blocked": [
+    {
+      "id": "S1-azure-auth",
+      "reason": "Needs the Azure OpenAI resource name, the gpt-5.4 and gpt-5.4-mini deployment names, and AZURE_OPENAI_API_KEY provided by the user. Not to be worked around by reading any on-disk credential.",
+      "unblocks": ["S2-context-file", "S3-replay", "S4-negative-control"]
+    },
+    {
+      "id": "S3-replay",
+      "reason": "The high-signal spike: revert known-good commits in a real private target repo on branches and see whether a codex-on-Azure loop reproduces green-gate PRs. Blocked by S1. This is what M5's coded form waits on.",
+      "unblocks": []
+    }
+  ],
+  "notes": "First action of any continued pass: check whether the Azure key file exists (existence only, never read it). If it appeared, pivot to S1 then S2 before any further scaffolding."
+}
