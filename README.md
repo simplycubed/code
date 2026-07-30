@@ -2,7 +2,7 @@
 
 An autonomous coding agent that lives inside your own GitHub. You file an issue, it opens a pull request, and a human decides whether to merge.
 
-> Status: beta. `v0.1.1` is the latest release; expect rough edges. See [Status](#status).
+> Status: beta. `v0.1.1` is the latest release; expect rough edges. Product overview: [simplycubed.com/code](https://simplycubed.com/code?utm_source=github&utm_medium=readme&utm_campaign=code). See [Status](#status).
 
 ## What it is
 
@@ -35,7 +35,7 @@ You drive the agent by applying one label and reading the pull request. The bot 
 | `sc:working` | bot | Implementing the change. |
 | `sc:review` | bot | Review and fix pass in progress. |
 | `sc:blocked` | bot | Needs a human. The agent stopped and left a note. |
-| `sc:done` | bot | Pull request merged. |
+| `sc:done` | bot | The bot is finished. A human merged the pull request; the bot closes out the issue. |
 
 ## Running in your own GitHub
 
@@ -47,14 +47,13 @@ What this buys you:
 - Your model provider keys, your `GITHUB_TOKEN`, and any other secrets stay in your GitHub secret store. They are read by your own Actions runs and never transit our infrastructure.
 - The agent holds no deploy credentials and has no path to production. The most it can do is open a pull request against a branch. A human and your branch protection rules decide what happens next.
 
+Setup files are written locally by `simplycubed init` and merged by a human, because the runtime holds no `workflows` permission and cannot add its own workflow files.
+
 The GitHub App identity is `simplycubed-code[bot]`. That bot is the single audit signal for everything the agent does.
 
 ## Getting started
 
-The current onboarding path is one workflow change plus one local init step.
-Use [Install into your GitHub](#install-into-your-github): copy the caller
-workflow, add the Azure endpoint and key, run `simplycubed init`, merge, then
-label an issue `sc:go`.
+Start with the adopter quickstart in [docs/setup.md](docs/setup.md). It covers the shipped path from CLI install to the first issue-driven pull request, including where the Azure endpoint and key live for local CLI runs versus GitHub Actions.
 
 ## Installation
 
@@ -69,15 +68,20 @@ That prints `0.1.1`. Pre-1.0 releases follow semver with the usual caveat: minor
 versions may still change behavior. Pin the tag you have validated rather than
 floating on `@latest`.
 
+Then follow the [quickstart in `docs/setup.md`](docs/setup.md) to write the repo
+config, add the caller workflow, set the Azure values, and open the first pull
+request.
+
 ## Install into your GitHub
 
 To run the loop inside your own GitHub Actions:
 
-1. Copy [`docs/templates/simplycubed-caller.yml`](docs/templates/simplycubed-caller.yml) into the adopter repo as `.github/workflows/simplycubed.yml`, then merge that one workflow pull request.
-2. Add a repository variable `AZURE_OPENAI_ENDPOINT` with your Azure OpenAI endpoint, and add the repository secret `AZURE_OPENAI_API_KEY`.
-3. Optionally add a PAT as `SIMPLYCUBED_GH_TOKEN`. This is strongly recommended: pushes and pull requests authored with `GITHUB_TOKEN` do not trigger downstream workflows, so without a PAT the agent's PRs can miss their `check` runs and required checks block merge. If you set it, use a dedicated non-admin machine account's PAT, never a human reviewer's PAT, because the fix-on-request loop resolves the token identity and skips self-authored reviews. The reusable workflow falls back to `github.token` only when no PAT is set; issue #31 replaces this later with an App token.
-4. Run `simplycubed init` once in the adopter repo so `.github/simplycubed.yml` and the `sc:*` labels exist, then merge that setup change.
-5. File an issue and apply the `sc:go` label. Reviews submitted on the resulting pull request call back into the same reusable workflow for the fix-on-request loop.
+1. In the adopter repo, run `simplycubed init --workflow`. That writes `.github/simplycubed.yml`, writes `.github/workflows/simplycubed.yml`, and creates the `sc:*` labels through your local `gh` auth.
+2. Fill in the real `gate:` in `.github/simplycubed.yml`.
+3. Add the repository variable `AZURE_OPENAI_ENDPOINT` and the repository secret `AZURE_OPENAI_API_KEY`.
+4. Optionally add a PAT as `SIMPLYCUBED_GH_TOKEN`. This is strongly recommended: pushes and pull requests authored with `GITHUB_TOKEN` do not trigger downstream workflows, so without a PAT the agent's PRs can miss their `check` runs and required checks block merge. If you set it, use a dedicated non-admin machine account's PAT, never a human reviewer's PAT, because the fix-on-request loop resolves the token identity and skips self-authored reviews. The reusable workflow falls back to `github.token` only when no PAT is set; issue #31 replaces this later with an App token.
+5. Open a setup pull request in the adopter repo and merge it yourself. Setup files are written locally by `simplycubed init` and merged by a human, because the runtime holds no `workflows` permission and cannot add its own workflow files.
+6. File an issue and apply `sc:go`. Reviews submitted on the resulting pull request call back into the same reusable workflow for the fix-on-request loop.
 
 ## Configuration
 
@@ -115,7 +119,7 @@ Getting the gate right is where first runs stall: it has to be green on your own
 
 The model that writes the code sits behind a pluggable `Runner` interface, so you bring your own provider.
 
-The first engine adapter targets the Codex CLI running against Azure OpenAI (GPT-5.4 and 5.4-mini). A Claude Code adapter is planned. The `Runner` interface is the seam where other engines plug in.
+The first engine adapter targets the Codex CLI running against Azure OpenAI. Today the shipped setup needs an Azure endpoint, an API key, and optionally a deployment name override if you are not using the default `gpt-5.4`. A Claude Code adapter is planned. The `Runner` interface is the seam where other engines plug in.
 
 ## Status
 
@@ -126,11 +130,11 @@ Roadmap, roughly in order:
 - The issue-to-pull-request loop. **Done.**
 - The fix-on-request loop: a human requests changes, a fixer role addresses them. **Done.**
 - Wiring the read-only reviewer role into the loop so a diff is reviewed before it reaches a human.
-- The self-onboarding flow via bootstrap issue and setup pull requests.
+- The self-onboarding flow via `init` and `init --workflow`. **Done.**
 - The Codex on Azure OpenAI engine adapter. **Done.**
 - The Claude Code engine adapter.
 
-If you are evaluating this for real work today, the honest answer is to watch the repo and check back. It is not ready.
+If you are evaluating it now, read that as beta software rather than a polished product. The core loops work; reviewer wiring is still in progress, and self-onboarding shipped as `init` and `init --workflow`.
 
 ## Contributing
 
@@ -148,7 +152,7 @@ To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
 ## About SimplyCubed
 
-SimplyCubed builds AI automation for teams that would rather not hire for it. More at [simplycubed.com](https://simplycubed.com).
+SimplyCubed builds AI automation for teams that would rather not hire for it. Product page: [simplycubed.com/code](https://simplycubed.com/code?utm_source=github&utm_medium=readme&utm_campaign=code).
 
 ## License
 
