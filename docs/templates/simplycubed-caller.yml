@@ -1,6 +1,8 @@
 name: simplycubed
 
 on:
+  issue_comment:
+    types: [created]
   issues:
     types: [labeled]
   pull_request_review:
@@ -33,6 +35,30 @@ jobs:
       actor-login: ${{ github.event.review.user.login }}
       azure-openai-endpoint: ${{ vars.AZURE_OPENAI_ENDPOINT }}
       # model: my-gpt-5-4-deployment
+    secrets:
+      azure-openai-api-key: ${{ secrets.AZURE_OPENAI_API_KEY }}
+      github-app-private-key: ${{ secrets.SIMPLYCUBED_GH_APP_PRIVATE_KEY }}
+
+  comment:
+    # issue_comment fires for any user on a public repository, so the command
+    # must be addressed to the bot AND come from someone with write access.
+    # author_association is checked here so an unauthorized comment never starts
+    # a job holding secrets; the app checks access again, because a caller is a
+    # file in your repository and can be edited.
+    if: >-
+      github.event_name == 'issue_comment' &&
+      github.event.comment.user.type != 'Bot' &&
+      startsWith(github.event.comment.body, '@simplycubed-code') &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+    uses: simplycubed/code/.github/workflows/simplycubed.yml@v0.1.5
+    with:
+      ref: ${{ github.event.issue.number }}
+      github-app-id: ${{ vars.SIMPLYCUBED_GH_APP_ID }}
+      comment-body: ${{ github.event.comment.body }}
+      issue-number: ${{ github.event.issue.pull_request == null && github.event.issue.number || '' }}
+      pr-number: ${{ github.event.issue.pull_request != null && github.event.issue.number || '' }}
+      actor-login: ${{ github.event.comment.user.login }}
+      azure-openai-endpoint: ${{ vars.AZURE_OPENAI_ENDPOINT }}
     secrets:
       azure-openai-api-key: ${{ secrets.AZURE_OPENAI_API_KEY }}
       github-app-private-key: ${{ secrets.SIMPLYCUBED_GH_APP_PRIVATE_KEY }}

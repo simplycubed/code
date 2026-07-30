@@ -598,3 +598,27 @@ func TestPrepare(t *testing.T) {
 		}
 	})
 }
+
+func TestCommandCmdRoutesByCommentBody(t *testing.T) {
+	t.Run("help replies without touching the repo", func(t *testing.T) {
+		var out bytes.Buffer
+		if err := commandCmd([]string{"--body", "@simplycubed-code help", "o/r#1"}, &out); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(out.String(), "@simplycubed-code go") {
+			t.Fatalf("help should list the commands, got: %q", out.String())
+		}
+	})
+
+	// An unrecognised comment must do nothing at all, quietly. This is the case
+	// that fires whenever anyone mentions the bot in passing.
+	t.Run("an unrecognised comment does nothing", func(t *testing.T) {
+		var out bytes.Buffer
+		if err := commandCmd([]string{"--body", "thanks @simplycubed-code", "o/r#1"}, &out); err != nil {
+			t.Fatalf("an unrecognised comment must not be an error: %v", err)
+		}
+		if !strings.Contains(out.String(), "nothing to do") {
+			t.Fatalf("output = %q", out.String())
+		}
+	})
+}

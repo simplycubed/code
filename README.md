@@ -37,6 +37,14 @@ You drive the agent by applying one label and reading the pull request. The bot 
 | `sc:blocked` | bot | Needs a human. The agent stopped and left a note. |
 | `sc:done` | bot | The bot is finished. A human merged the pull request; the bot closes out the issue. |
 
+You can also drive it by comment, addressed to the bot at the start of a line:
+
+- `@simplycubed-code go` on an issue starts work on it, the same as applying `sc:go`.
+- `@simplycubed-code address` on a pull request addresses the current review feedback.
+- `@simplycubed-code help` lists what it understands.
+
+Only comments from people with write access are acted on, and only a comment that begins with the mention counts, so quoting an earlier comment never re-triggers a run. Note that a plain pull-request comment is not a review: to run the fixer from a review, submit it through **Files changed → Review changes**.
+
 ## Running in your own GitHub
 
 The whole thing runs on GitHub Actions, event-driven, with no server and no VM for SimplyCubed to operate. When you install the app and file issues, the work executes on your runners inside your organization.

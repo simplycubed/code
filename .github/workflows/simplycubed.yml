@@ -21,6 +21,11 @@ on:
         default: ""
         required: false
         type: string
+      comment-body:
+        description: Body of the comment that triggered this run, when triggered by a comment.
+        default: ""
+        required: false
+        type: string
       actor-login:
         description: Login of the labeler or review author.
         required: true
