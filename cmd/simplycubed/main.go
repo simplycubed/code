@@ -33,42 +33,50 @@ import (
 )
 
 func main() {
-	args := os.Args[1:]
+	os.Exit(dispatch(os.Args[1:], os.Stdout, os.Stderr))
+}
+
+// dispatch runs one command and returns the process exit code. main is only a
+// wrapper around it, so the whole entry point (argument handling, exit codes,
+// error reporting) is reachable from a test instead of being the one part of
+// the CLI that nothing exercises.
+func dispatch(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		usage()
-		os.Exit(2)
+		usage(stderr)
+		return 2
+	}
+	fail := func(err error) int {
+		fmt.Fprintln(stderr, "error:", err)
+		return 1
 	}
 	switch args[0] {
 	case "version", "--version", "-v":
-		fmt.Println(buildinfo.Version)
+		fmt.Fprintln(stdout, buildinfo.Version)
 	case "init":
-		if err := initCmd(args[1:], os.Stdout); err != nil {
-			fmt.Fprintln(os.Stderr, "error:", err)
-			os.Exit(1)
+		if err := initCmd(args[1:], stdout); err != nil {
+			return fail(err)
 		}
 	case "preflight":
-		if err := preflightCmd(args[1:], os.Stdout); err != nil {
-			fmt.Fprintln(os.Stderr, "error:", err)
-			os.Exit(1)
+		if err := preflightCmd(args[1:], stdout); err != nil {
+			return fail(err)
 		}
 	case "run":
 		if err := runCmd(args[1:]); err != nil {
-			fmt.Fprintln(os.Stderr, "error:", err)
-			os.Exit(1)
+			return fail(err)
 		}
 	case "address":
 		if err := addressCmd(args[1:]); err != nil {
-			fmt.Fprintln(os.Stderr, "error:", err)
-			os.Exit(1)
+			return fail(err)
 		}
 	default:
-		usage()
-		os.Exit(2)
+		usage(stderr)
+		return 2
 	}
+	return 0
 }
 
-func usage() {
-	fmt.Fprintf(os.Stderr, `simplycubed %s
+func usage(w io.Writer) {
+	fmt.Fprintf(w, `simplycubed %s
 
 usage:
   simplycubed version

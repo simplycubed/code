@@ -476,3 +476,66 @@ func TestEngineEnvRejectsAnUnparseableEndpoint(t *testing.T) {
 		t.Fatal("expected an error for an unparseable endpoint")
 	}
 }
+
+func TestDispatch(t *testing.T) {
+	// Every command's exit code is part of the contract: a workflow step
+	// distinguishes "you asked for something that does not exist" (2) from
+	// "the thing you asked for failed" (1).
+	t.Run("version prints the version and succeeds", func(t *testing.T) {
+		var out, errOut bytes.Buffer
+		if code := dispatch([]string{"version"}, &out, &errOut); code != 0 {
+			t.Fatalf("exit = %d, want 0", code)
+		}
+		if !strings.Contains(out.String(), buildinfo.Version) {
+			t.Fatalf("stdout = %q, want the version", out.String())
+		}
+	})
+
+	t.Run("no arguments prints usage and exits 2", func(t *testing.T) {
+		var out, errOut bytes.Buffer
+		if code := dispatch(nil, &out, &errOut); code != 2 {
+			t.Fatalf("exit = %d, want 2", code)
+		}
+		if !strings.Contains(errOut.String(), "usage:") {
+			t.Fatalf("stderr = %q, want usage", errOut.String())
+		}
+	})
+
+	t.Run("an unknown command prints usage and exits 2", func(t *testing.T) {
+		var out, errOut bytes.Buffer
+		if code := dispatch([]string{"nope"}, &out, &errOut); code != 2 {
+			t.Fatalf("exit = %d, want 2", code)
+		}
+		if !strings.Contains(errOut.String(), "usage:") {
+			t.Fatalf("stderr = %q, want usage", errOut.String())
+		}
+	})
+
+	t.Run("init reports failure on stderr and exits 1", func(t *testing.T) {
+		var out, errOut bytes.Buffer
+		if code := dispatch([]string{"init", "--nope"}, &out, &errOut); code != 1 {
+			t.Fatalf("exit = %d, want 1", code)
+		}
+		if !strings.Contains(errOut.String(), "error:") {
+			t.Fatalf("stderr = %q, want an error", errOut.String())
+		}
+	})
+
+	// A failing command exits 1 and says why on stderr, which is what an
+	// operator reads out of a workflow log.
+	for _, cmd := range []string{"preflight", "run", "address"} {
+		t.Run(cmd+" reports failure on stderr and exits 1", func(t *testing.T) {
+			t.Setenv("AZURE_OPENAI_ENDPOINT", "")
+			t.Setenv("AZURE_OPENAI_API_KEY", "")
+			var out, errOut bytes.Buffer
+			// An empty directory has no config, so each command fails early.
+			code := dispatch([]string{cmd, "--repo-dir", t.TempDir()}, &out, &errOut)
+			if code != 1 {
+				t.Fatalf("exit = %d, want 1", code)
+			}
+			if !strings.Contains(errOut.String(), "error:") {
+				t.Fatalf("stderr = %q, want an error", errOut.String())
+			}
+		})
+	}
+}
