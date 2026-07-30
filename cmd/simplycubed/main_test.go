@@ -386,3 +386,29 @@ func buildVersionForTest(t *testing.T, version string) string {
 	})
 	return original
 }
+
+func TestValidEndpoint(t *testing.T) {
+	t.Parallel()
+	ok := []string{
+		"https://my-resource.openai.azure.com",
+		"https://example.openai.azure.com/some/path",
+	}
+	for _, e := range ok {
+		if err := validEndpoint(e); err != nil {
+			t.Fatalf("validEndpoint(%q) = %v, want nil", e, err)
+		}
+	}
+	// Each of these otherwise fails deep in the engine with an error that says
+	// nothing about the endpoint being the cause.
+	bad := []string{
+		"http://my-resource.openai.azure.com", // not https
+		"my-resource.openai.azure.com",        // no scheme
+		"https://",                            // no host
+		"not a url",
+	}
+	for _, e := range bad {
+		if err := validEndpoint(e); err == nil {
+			t.Fatalf("validEndpoint(%q) = nil, want an error", e)
+		}
+	}
+}

@@ -14,6 +14,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -111,6 +112,20 @@ const (
 //go:embed simplycubed-caller.yml.tmpl
 var callerWorkflowTemplate string
 
+// validEndpoint rejects an AZURE_OPENAI_ENDPOINT that cannot work, so the run
+// stops here rather than deep inside the engine. It checks shape only: whether
+// the resource exists is the engine's business.
+func validEndpoint(endpoint string) error {
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return fmt.Errorf("AZURE_OPENAI_ENDPOINT is not a valid URL: %w", err)
+	}
+	if u.Scheme != "https" || u.Host == "" {
+		return fmt.Errorf("AZURE_OPENAI_ENDPOINT must be an https URL like https://<resource>.openai.azure.com, got %q", endpoint)
+	}
+	return nil
+}
+
 // commonFlags are the flags shared by run and address, plus the resolved config
 // and dependency graph both commands need.
 type commonFlags struct {
@@ -163,6 +178,11 @@ func prepare(name string, argv []string) (*commonFlags, []string, error) {
 	endpoint := strings.TrimRight(os.Getenv("AZURE_OPENAI_ENDPOINT"), "/")
 	if endpoint == "" {
 		return nil, nil, fmt.Errorf("AZURE_OPENAI_ENDPOINT is not set")
+	}
+	// A malformed endpoint otherwise fails much later, inside the engine, with
+	// an error that says nothing about the cause.
+	if err := validEndpoint(endpoint); err != nil {
+		return nil, nil, err
 	}
 	if os.Getenv("AZURE_OPENAI_API_KEY") == "" {
 		return nil, nil, fmt.Errorf("AZURE_OPENAI_API_KEY is not set")
