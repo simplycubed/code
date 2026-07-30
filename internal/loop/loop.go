@@ -7,6 +7,7 @@ package loop
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/simplycubed/code/internal/attribution"
 	"github.com/simplycubed/code/internal/domain"
@@ -87,6 +88,23 @@ type Engine struct {
 	// terminal line per run.
 	Ledger *ledger.Writer
 	Cfg    Config
+
+	// lastSummary is the engine's closing message from the most recent turn.
+	// It is attached to an escalation so a human reading a blocked issue sees
+	// the agent's own account rather than only the loop's verdict.
+	lastSummary string
+}
+
+// withSummary appends the engine's account of its last turn to an escalation
+// reason. The text is the model's, so it is quoted and labelled rather than
+// presented as the loop's own words.
+func (e *Engine) withSummary(reason string) string {
+	s := strings.TrimSpace(e.lastSummary)
+	if s == "" {
+		return reason
+	}
+	return reason + "\n\n<details><summary>What the agent reported</summary>\n\n> " +
+		strings.ReplaceAll(s, "\n", "\n> ") + "\n\n</details>"
 }
 
 // promptFor returns the prompt for a role turn, using the configured builder or
@@ -137,32 +155,36 @@ func (e *Engine) Run(ctx context.Context, iss domain.Issue) (Result, error) {
 		// Act: one implementer turn. The prompt comes from the configured builder
 		// (the roles package, wired by the app), which carries the bounds; it
 		// falls back to the issue body when no builder is set.
-		if _, err := e.Runner.Run(ctx, domain.RunRequest{
+		res, err := e.Runner.Run(ctx, domain.RunRequest{
 			Role:    domain.RoleImplementer,
 			WorkDir: e.Cfg.WorkDir,
 			Prompt:  e.promptFor(domain.RoleImplementer, iss),
-		}); err != nil {
+		})
+		if err != nil {
 			return e.escalate(ctx, iss, prefix, round, fmt.Sprintf("engine error: %v", err))
 		}
+		// The engine's closing message is the only account of what it did and
+		// why. Without it an escalation reads as "nothing happened", which is
+		// exactly the case a human most needs explained.
+		e.lastSummary = res.Summary
 
 		// Grade against the repo's own gate.
-		res := e.Gate(ctx, e.Cfg.WorkDir)
+		gr := e.Gate(ctx, e.Cfg.WorkDir)
 		gateStr := "fail"
-		if res.Passed {
+		if gr.Passed {
 			gateStr = "pass"
 		}
 		e.log(iss, ledger.Event{Phase: ledger.PhaseRound, Round: round, Gate: gateStr})
-		if res.Passed {
+		if gr.Passed {
 			return e.openPR(ctx, iss, prefix, round)
 		}
-
 		// Red. Stall detection: two reds in a row with the same signature means
 		// the change is not moving the failure. Stop rather than burn rounds.
-		if res.Signature == lastSig {
+		if gr.Signature == lastSig {
 			sameSigReds++
 		} else {
 			sameSigReds = 1
-			lastSig = res.Signature
+			lastSig = gr.Signature
 		}
 		if sameSigReds >= 2 {
 			return e.escalate(ctx, iss, prefix, round, "gate failed the same way twice; stalled")
@@ -201,13 +223,15 @@ func (e *Engine) Fix(ctx context.Context, req FixRequest) (Result, error) {
 	lastSig := ""
 
 	for round := 1; round <= maxRounds; round++ {
-		if _, err := e.Runner.Run(ctx, domain.RunRequest{
+		turn, err := e.Runner.Run(ctx, domain.RunRequest{
 			Role:    domain.RoleFixer,
 			WorkDir: e.Cfg.WorkDir,
 			Prompt:  req.Prompt,
-		}); err != nil {
+		})
+		if err != nil {
 			return e.fixEscalate(ctx, req, prefix, round, fmt.Sprintf("engine error: %v", err))
 		}
+		e.lastSummary = turn.Summary
 
 		res := e.Gate(ctx, e.Cfg.WorkDir)
 		gateStr := "fail"
@@ -271,7 +295,7 @@ func (e *Engine) pushFix(ctx context.Context, req FixRequest, prefix string, rou
 func (e *Engine) fixEscalate(ctx context.Context, req FixRequest, prefix string, round int, reason string) (Result, error) {
 	target := e.stateTarget(req)
 	iss := domain.Issue{Repo: req.Repo, Number: target}
-	_ = e.Forge.CommentPR(ctx, req.Repo, req.PR, "Blocked: "+reason)
+	_ = e.Forge.CommentPR(ctx, req.Repo, req.PR, e.withSummary("Blocked: "+reason))
 	_ = e.Forge.SetState(ctx, req.Repo, target, state.Label(prefix, state.Blocked))
 	e.log(iss, ledger.Event{Phase: ledger.PhaseRunEnd, Outcome: string(OutcomeBlocked), Reason: reason})
 	return Result{Outcome: OutcomeBlocked, Rounds: round, Reason: reason}, nil
@@ -320,7 +344,7 @@ func (e *Engine) openPR(ctx context.Context, iss domain.Issue, prefix string, ro
 }
 
 func (e *Engine) escalate(ctx context.Context, iss domain.Issue, prefix string, round int, reason string) (Result, error) {
-	_ = e.Forge.Comment(ctx, iss.Repo, iss.Number, "Blocked: "+reason)
+	_ = e.Forge.Comment(ctx, iss.Repo, iss.Number, e.withSummary("Blocked: "+reason))
 	_ = e.Forge.SetState(ctx, iss.Repo, iss.Number, state.Label(prefix, state.Blocked))
 	e.log(iss, ledger.Event{Phase: ledger.PhaseRunEnd, Outcome: string(OutcomeBlocked), Reason: reason})
 	return Result{Outcome: OutcomeBlocked, Rounds: round, Reason: reason}, nil
