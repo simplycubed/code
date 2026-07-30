@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability (private)
+    url: https://github.com/simplycubed/code/security/policy
+    about: Do not file security issues in public. Report them privately through the Security tab; see SECURITY.md.
+  - name: Contributing and pull-request policy
+    url: https://github.com/simplycubed/code/blob/main/CONTRIBUTING.md
+    about: This project does not accept external code contributions. Bug reports and security reports are welcome.
