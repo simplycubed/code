@@ -2,7 +2,7 @@
 
 An autonomous coding agent that lives inside your own GitHub. You file an issue, it opens a pull request, and a human decides whether to merge.
 
-> Status: beta. `v0.1.3` is the latest release; expect rough edges. Product overview: [simplycubed.com/code](https://simplycubed.com/code?utm_source=github&utm_medium=readme&utm_campaign=code). See [Status](#status).
+> Status: beta. `v0.1.4` is the latest release; expect rough edges. Product overview: [simplycubed.com/code](https://simplycubed.com/code?utm_source=github&utm_medium=readme&utm_campaign=code). See [Status](#status).
 
 ## What it is
 
@@ -60,11 +60,11 @@ Start with the adopter quickstart in [docs/setup.md](docs/setup.md). It covers t
 Install the pinned release you want to run:
 
 ```sh
-go install github.com/simplycubed/code/cmd/simplycubed@v0.1.3
+go install github.com/simplycubed/code/cmd/simplycubed@v0.1.4
 simplycubed version
 ```
 
-That prints `0.1.3`. Pre-1.0 releases follow semver with the usual caveat: minor
+That prints `0.1.4`. Pre-1.0 releases follow semver with the usual caveat: minor
 versions may still change behavior. Pin the tag you have validated rather than
 floating on `@latest`.
 
@@ -135,7 +135,7 @@ The first engine adapter targets the Codex CLI running against Azure OpenAI. Tod
 
 ## Status
 
-Beta, and honest about it. Two loops run end to end via the CLI on the Codex-on-Azure engine: issue to pull request, and fix-on-request (a human requests changes, the fixer addresses them and pushes back). `v0.1.3` is the latest release and you should still expect rough edges.
+Beta, and honest about it. Two loops run end to end via the CLI on the Codex-on-Azure engine: issue to pull request, and fix-on-request (a human requests changes, the fixer addresses them and pushes back). `v0.1.4` is the latest release and you should still expect rough edges.
 
 Roadmap, roughly in order:
 
