@@ -91,6 +91,7 @@ fix back to the same branch, or reports that there is nothing new to address.
 
 flags (both commands):
   --repo-dir    path to the target repo checkout (default ".")
+  --actor       login that triggered the run; refused unless it has write access
   --model       engine model/deployment name (default "gpt-5.4")
   --base        worktree base ref (default "origin/HEAD")
   --state-dir   where worktrees and the generated config live
@@ -148,6 +149,27 @@ func engineEnv() (string, error) {
 	return endpoint, nil
 }
 
+// newRunner builds the engine runner, honouring SIMPLYCUBED_SANDBOX.
+//
+// The default sandbox (workspace-write) uses bubblewrap on Linux, which cannot
+// create a network namespace inside a GitHub Actions runner:
+//
+//	bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted
+//
+// Every command the engine tries then fails, including `pwd`, so it reads
+// nothing and changes nothing while still exiting successfully. The runtime
+// sets SIMPLYCUBED_SANDBOX=danger-full-access there, on the reasoning that in
+// CI the ephemeral runner is itself the isolation boundary: a per-job token
+// scoped to one repository, no production credentials, and the machine is
+// destroyed afterwards. Locally the sandbox stays on.
+func newRunner(codexHome string) *codex.Runner {
+	r := codex.New(codexHome)
+	if mode := os.Getenv("SIMPLYCUBED_SANDBOX"); mode != "" {
+		r.Sandbox = mode
+	}
+	return r
+}
+
 // preflightCmd validates the repo config and engine settings, then exits. A
 // workflow runs it before installing the rest of the toolchain, so a
 // misconfigured repository finds out in seconds and the rules live in one place.
@@ -172,6 +194,7 @@ func preflightCmd(argv []string, stdout io.Writer) error {
 type commonFlags struct {
 	repoDir string
 	base    string
+	actor   string
 	cfg     *config.Config
 	deps    app.Deps
 }
@@ -206,6 +229,7 @@ func prepare(name string, argv []string) (*commonFlags, []string, error) {
 	model := fs.String("model", "gpt-5.4", "engine model/deployment name")
 	base := fs.String("base", "origin/HEAD", "worktree base ref")
 	stateDir := fs.String("state-dir", filepath.Join(os.TempDir(), "simplycubed"), "state directory")
+	actor := fs.String("actor", "", "login that triggered this run; checked for write access")
 	rest, err := parseInterleaved(fs, argv)
 	if err != nil {
 		return nil, nil, err
@@ -235,15 +259,25 @@ func prepare(name string, argv []string) (*commonFlags, []string, error) {
 		prefix = config.DefaultLabelPrefix
 	}
 
+	forge := &forgegh.Forge{StateLabels: app.StateLabels(prefix), Self: os.Getenv("SIMPLYCUBED_SELF_LOGIN")}
+	// When the caller did not name the identity, ask the credential who it is.
+	// The workflow used to do this with a gh graphql call and hand the answer
+	// back in an environment variable; the product can just look.
+	if forge.Self == "" {
+		if login, err := forge.Whoami(context.Background()); err == nil {
+			forge.Self = login
+		}
+	}
+
 	deps := app.Deps{
-		Runner: codex.New(codexHome),
+		Runner: newRunner(codexHome),
 		// Self, when set, filters the agent's own review feedback out of the fix
 		// loop. Empty for local runs, where the operator is a human, not the bot.
-		Forge:     &forgegh.Forge{StateLabels: app.StateLabels(prefix), Self: os.Getenv("SIMPLYCUBED_SELF_LOGIN")},
+		Forge:     forge,
 		VCS:       &vcsgit.Git{},
 		Worktrees: &worktree.Manager{RepoDir: *repoDir, BaseDir: filepath.Join(*stateDir, "worktrees")},
 	}
-	return &commonFlags{repoDir: *repoDir, base: *base, cfg: cfg, deps: deps}, rest, nil
+	return &commonFlags{repoDir: *repoDir, base: *base, actor: *actor, cfg: cfg, deps: deps}, rest, nil
 }
 
 func runCmd(argv []string) error {
@@ -256,6 +290,9 @@ func runCmd(argv []string) error {
 	}
 	iss, err := app.ParseIssueRef(rest[0])
 	if err != nil {
+		return err
+	}
+	if err := app.Authorize(context.Background(), c.deps, iss.Repo, c.actor); err != nil {
 		return err
 	}
 	if err := fetchIssue(&iss); err != nil {
@@ -285,6 +322,9 @@ func addressCmd(argv []string) error {
 	}
 	ref, err := app.ParseIssueRef(rest[0])
 	if err != nil {
+		return err
+	}
+	if err := app.Authorize(context.Background(), c.deps, ref.Repo, c.actor); err != nil {
 		return err
 	}
 
