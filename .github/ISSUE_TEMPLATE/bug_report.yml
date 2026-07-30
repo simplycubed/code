@@ -1,0 +1,56 @@
+name: Bug report
+description: Report a bug in SimplyCubed Code.
+title: "[bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug.
+
+        Do not use this form for a suspected **security vulnerability**. Report those privately through the [Security policy](https://github.com/simplycubed/code/security/policy); see [SECURITY.md](https://github.com/simplycubed/code/blob/main/SECURITY.md).
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, and what went wrong?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The command you ran (for example `simplycubed address owner/repo#12`) and the relevant `.github/simplycubed.yml`. Redact anything private.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `simplycubed version`.
+    validations:
+      required: true
+  - type: dropdown
+    id: engine
+    attributes:
+      label: Engine
+      description: Which engine adapter were you running?
+      options:
+        - Codex on Azure OpenAI
+        - Other or not sure
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant output
+      description: Paste any relevant logs or output. Redact tokens, keys, and private code; it will be rendered as a code block.
+      render: shell
+    validations:
+      required: false
