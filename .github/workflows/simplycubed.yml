@@ -25,6 +25,11 @@ on:
         description: Azure OpenAI endpoint, for example https://resource.openai.azure.com.
         required: true
         type: string
+      model:
+        description: Engine model or deployment name passed to the SimplyCubed CLI.
+        default: gpt-5.4
+        required: false
+        type: string
       version:
         description: SimplyCubed CLI tag to install.
         default: v0.1.0
@@ -36,12 +41,11 @@ on:
       gh-token:
         required: false
 
-concurrency: simplycubed-${{ inputs.ref }}
-
 jobs:
   run:
     if: ${{ inputs['issue-number'] != '' }}
     runs-on: ubuntu-latest
+    concurrency: simplycubed-${{ inputs.ref }}
     permissions:
       contents: write
       issues: write
@@ -51,7 +55,9 @@ jobs:
       AZURE_OPENAI_ENDPOINT: ${{ inputs['azure-openai-endpoint'] }}
       AZURE_OPENAI_API_KEY: ${{ secrets['azure-openai-api-key'] }}
     steps:
-      # IMPORTANT: prefer a PAT in secrets.gh-token when available.
+      # IMPORTANT: if you set secrets.gh-token, use a dedicated non-admin machine
+      # account's PAT, never a human reviewer's PAT, because the fix loop resolves
+      # token identity and skips self-authored reviews.
       # A GITHUB_TOKEN-authored push or pull request does not trigger downstream
       # workflows, so without a PAT the agent can open or update a PR that never
       # receives its own `check` run. Required checks then block the merge.
@@ -61,17 +67,6 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ secrets['gh-token'] != '' && secrets['gh-token'] || github.token }}
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: "1.26"
-
-      - name: Install SimplyCubed CLI
-        run: go install github.com/simplycubed/code/cmd/simplycubed@${{ inputs.version }}
-
-      - name: Install Codex CLI
-        run: npm install -g @openai/codex@0.146.0
 
       - name: Authorize labeler
         env:
@@ -92,35 +87,6 @@ jobs:
               ;;
           esac
 
-      - name: Run SimplyCubed
-        env:
-          GH_TOKEN: ${{ env.SIMPLYCUBED_AUTH_TOKEN }}
-        run: simplycubed run "${GITHUB_REPOSITORY}#${{ inputs['issue-number'] }}" --repo-dir .
-
-  address:
-    if: ${{ inputs['pr-number'] != '' }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      issues: write
-      pull-requests: write
-    env:
-      SIMPLYCUBED_AUTH_TOKEN: ${{ secrets['gh-token'] != '' && secrets['gh-token'] || github.token }}
-      HAS_CUSTOM_GH_TOKEN: ${{ secrets['gh-token'] != '' }}
-      AZURE_OPENAI_ENDPOINT: ${{ inputs['azure-openai-endpoint'] }}
-      AZURE_OPENAI_API_KEY: ${{ secrets['azure-openai-api-key'] }}
-    steps:
-      # IMPORTANT: prefer a PAT in secrets.gh-token when available.
-      # A GITHUB_TOKEN-authored push or pull request does not trigger downstream
-      # workflows, so without a PAT the agent can open or update a PR that never
-      # receives its own `check` run. Required checks then block the merge.
-      # Issue #31 replaces this fallback with an App token later.
-      - name: Check out repository
-        uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-          token: ${{ secrets['gh-token'] != '' && secrets['gh-token'] || github.token }}
-
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
@@ -131,6 +97,57 @@ jobs:
 
       - name: Install Codex CLI
         run: npm install -g @openai/codex@0.146.0
+
+      - name: Run SimplyCubed
+        env:
+          GH_TOKEN: ${{ env.SIMPLYCUBED_AUTH_TOKEN }}
+        run: simplycubed run "${GITHUB_REPOSITORY}#${{ inputs['issue-number'] }}" --model "${{ inputs.model }}" --repo-dir .
+
+  address:
+    if: ${{ inputs['pr-number'] != '' }}
+    runs-on: ubuntu-latest
+    concurrency: simplycubed-${{ inputs.ref }}
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    env:
+      SIMPLYCUBED_AUTH_TOKEN: ${{ secrets['gh-token'] != '' && secrets['gh-token'] || github.token }}
+      HAS_CUSTOM_GH_TOKEN: ${{ secrets['gh-token'] != '' }}
+      AZURE_OPENAI_ENDPOINT: ${{ inputs['azure-openai-endpoint'] }}
+      AZURE_OPENAI_API_KEY: ${{ secrets['azure-openai-api-key'] }}
+    steps:
+      # IMPORTANT: if you set secrets.gh-token, use a dedicated non-admin machine
+      # account's PAT, never a human reviewer's PAT, because the fix loop resolves
+      # token identity and skips self-authored reviews.
+      # A GITHUB_TOKEN-authored push or pull request does not trigger downstream
+      # workflows, so without a PAT the agent can open or update a PR that never
+      # receives its own `check` run. Required checks then block the merge.
+      # Issue #31 replaces this fallback with an App token later.
+      - name: Check out repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          token: ${{ secrets['gh-token'] != '' && secrets['gh-token'] || github.token }}
+
+      - name: Authorize reviewer
+        env:
+          ACTOR_LOGIN: ${{ inputs['actor-login'] }}
+          GH_TOKEN: ${{ env.SIMPLYCUBED_AUTH_TOKEN }}
+        run: |
+          permission="$(gh api "repos/${GITHUB_REPOSITORY}/collaborators/${ACTOR_LOGIN}/permission" --jq .permission)" || {
+            echo "actor ${ACTOR_LOGIN} is not authorized to run SimplyCubed on ${GITHUB_REPOSITORY}" >&2
+            exit 1
+          }
+          case "${permission}" in
+            write|admin)
+              echo "authorized ${ACTOR_LOGIN} with ${permission} permission"
+              ;;
+            *)
+              echo "actor ${ACTOR_LOGIN} must have write or admin on ${GITHUB_REPOSITORY}; got ${permission}" >&2
+              exit 1
+              ;;
+          esac
 
       - name: Resolve token identity
         id: identity
@@ -164,29 +181,23 @@ jobs:
           fi
           echo "skip=false" >> "${GITHUB_OUTPUT}"
 
-      - name: Authorize reviewer
+      - name: Set up Go
         if: ${{ steps.self-review.outputs.skip != 'true' }}
-        env:
-          ACTOR_LOGIN: ${{ inputs['actor-login'] }}
-          GH_TOKEN: ${{ env.SIMPLYCUBED_AUTH_TOKEN }}
-        run: |
-          permission="$(gh api "repos/${GITHUB_REPOSITORY}/collaborators/${ACTOR_LOGIN}/permission" --jq .permission)" || {
-            echo "actor ${ACTOR_LOGIN} is not authorized to run SimplyCubed on ${GITHUB_REPOSITORY}" >&2
-            exit 1
-          }
-          case "${permission}" in
-            write|admin)
-              echo "authorized ${ACTOR_LOGIN} with ${permission} permission"
-              ;;
-            *)
-              echo "actor ${ACTOR_LOGIN} must have write or admin on ${GITHUB_REPOSITORY}; got ${permission}" >&2
-              exit 1
-              ;;
-          esac
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.26"
+
+      - name: Install SimplyCubed CLI
+        if: ${{ steps.self-review.outputs.skip != 'true' }}
+        run: go install github.com/simplycubed/code/cmd/simplycubed@${{ inputs.version }}
+
+      - name: Install Codex CLI
+        if: ${{ steps.self-review.outputs.skip != 'true' }}
+        run: npm install -g @openai/codex@0.146.0
 
       - name: Address review feedback
         if: ${{ steps.self-review.outputs.skip != 'true' }}
         env:
           GH_TOKEN: ${{ env.SIMPLYCUBED_AUTH_TOKEN }}
           SIMPLYCUBED_SELF_LOGIN: ${{ steps.identity.outputs.login }}
-        run: simplycubed address "${GITHUB_REPOSITORY}#${{ inputs['pr-number'] }}" --repo-dir .
+        run: simplycubed address "${GITHUB_REPOSITORY}#${{ inputs['pr-number'] }}" --model "${{ inputs.model }}" --repo-dir .

@@ -75,7 +75,7 @@ To run the loop inside your own GitHub Actions:
 
 1. Copy [`docs/templates/simplycubed-caller.yml`](docs/templates/simplycubed-caller.yml) into the adopter repo as `.github/workflows/simplycubed.yml`, then merge that one workflow pull request.
 2. Add a repository variable `AZURE_OPENAI_ENDPOINT` with your Azure OpenAI endpoint, and add the repository secret `AZURE_OPENAI_API_KEY`.
-3. Optionally add a PAT as `SIMPLYCUBED_GH_TOKEN`. This is strongly recommended: pushes and pull requests authored with `GITHUB_TOKEN` do not trigger downstream workflows, so without a PAT the agent's PRs can miss their `check` runs and required checks block merge. The reusable workflow falls back to `github.token` only when no PAT is set; issue #31 replaces this later with an App token.
+3. Optionally add a PAT as `SIMPLYCUBED_GH_TOKEN`. This is strongly recommended: pushes and pull requests authored with `GITHUB_TOKEN` do not trigger downstream workflows, so without a PAT the agent's PRs can miss their `check` runs and required checks block merge. If you set it, use a dedicated non-admin machine account's PAT, never a human reviewer's PAT, because the fix-on-request loop resolves the token identity and skips self-authored reviews. The reusable workflow falls back to `github.token` only when no PAT is set; issue #31 replaces this later with an App token.
 4. Run `simplycubed init` once in the adopter repo so `.github/simplycubed.yml` and the `sc:*` labels exist, then merge that setup change.
 5. File an issue and apply the `sc:go` label. Reviews submitted on the resulting pull request call back into the same reusable workflow for the fix-on-request loop.
 
