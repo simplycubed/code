@@ -1,6 +1,6 @@
 # 0004. Role prompts and the reviewer verdict
 
-Status: Pending S3.
+Status: Accepted. The reviewer is wired into the loop; see the note at the end for what shipped and what changed.
 
 ## Context
 
@@ -34,3 +34,22 @@ The exact prompt wording, the fields that survive being produced reliably by
 GPT-5.4, and whether file-based structured output holds up in practice are all
 things S3 measures. The in-process `Verdict` type exists; the wire schema, the
 validation, and the prompts wait for evidence.
+
+## What shipped
+
+The reviewer runs after the gate passes and before the pull request opens. It
+writes a verdict to `.simplycubed/verdict.json`, the same scratch-directory
+transport the describer uses, so it cannot leak into a commit.
+
+Two details differ from the direction above, both learned rather than designed:
+
+- **A malformed verdict does not re-prompt.** It is treated as an absent
+  judgment and the change goes to the human as it stands. Re-prompting on a
+  parse failure risks a loop that spends rounds arguing with itself, and the
+  fallback a human already provides is cheaper.
+- **A verdict is not trusted merely because it says pass.** `Trusted` requires
+  a pass with no blocker, so a reviewer cannot wave through a change it has
+  just called unmergeable. That contradiction is resolved pessimistically.
+
+Unknown severities are rejected rather than downgraded: a finding the loop
+cannot rank is one it cannot act on correctly.
