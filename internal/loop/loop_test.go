@@ -189,3 +189,44 @@ func TestEngineErrorBlocksAndOpensNoPR(t *testing.T) {
 		t.Fatalf("reason = %q, expected engine error", res.Reason)
 	}
 }
+
+// An escalation that says only "no changes to propose" leaves a human with
+// nothing to act on. The engine's closing message is the agent's own account of
+// what it decided, so it has to reach the issue.
+func TestEscalationCarriesTheEngineSummary(t *testing.T) {
+	dir := t.TempDir()
+	eng, f := newEngine(dir, enginefake.New(
+		enginefake.Step{Summary: "STATUS.md already reads correctly to me, so I changed nothing."},
+		enginefake.Step{Summary: "STATUS.md already reads correctly to me, so I changed nothing."},
+		enginefake.Step{Summary: "STATUS.md already reads correctly to me, so I changed nothing."},
+	))
+	res, err := eng.Run(context.Background(), domain.Issue{Repo: "o/r", Number: 55})
+	if err != nil || res.Outcome != OutcomeBlocked {
+		t.Fatalf("outcome = %s err = %v", res.Outcome, err)
+	}
+	if len(f.Comments) == 0 {
+		t.Fatal("expected a comment on the issue")
+	}
+	got := f.Comments[len(f.Comments)-1]
+	if !strings.Contains(got, "STATUS.md already reads correctly") {
+		t.Fatalf("escalation should carry the agent's account, got:\n%s", got)
+	}
+	// The reason itself must survive alongside it.
+	if !strings.Contains(got, "Blocked:") {
+		t.Fatalf("escalation should still state the reason, got:\n%s", got)
+	}
+}
+
+func TestEscalationWithoutASummaryIsUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	eng, f := newEngine(dir, enginefake.New(
+		enginefake.Step{}, enginefake.Step{}, enginefake.Step{},
+	))
+	if _, err := eng.Run(context.Background(), domain.Issue{Repo: "o/r", Number: 7}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got := f.Comments[len(f.Comments)-1]
+	if strings.Contains(got, "What the agent reported") {
+		t.Fatalf("an empty summary must not add an empty section, got:\n%s", got)
+	}
+}
