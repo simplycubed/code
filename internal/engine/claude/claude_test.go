@@ -41,7 +41,7 @@ func TestRunPassesThePromptAndModel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	for _, want := range []string{"-p", "do the thing", "--model", "claude-sonnet-4-5", "--dangerously-skip-permissions"} {
+	for _, want := range []string{"-p", "do the thing", "--model", "claude-sonnet-4-5"} {
 		if !strings.Contains(res.Summary, want) {
 			t.Fatalf("args missing %q: %s", want, res.Summary)
 		}
@@ -50,15 +50,23 @@ func TestRunPassesThePromptAndModel(t *testing.T) {
 
 // A headless run has nobody to answer a permission prompt, but an adopter must
 // be able to turn that off.
-func TestRunHonoursSkipPermissions(t *testing.T) {
+// The vendor's danger flag is off unless an operator asks for it. Defaulting it
+// on would have the product disable a safety control on the operator's behalf.
+func TestRunDoesNotSkipPermissionsByDefault(t *testing.T) {
 	r := New()
 	r.Bin = writeFakeClaude(t, echoArgs)
-	r.SkipPermissions = false
 	res, _ := r.Run(context.Background(), domain.RunRequest{
 		Role: domain.RoleImplementer, WorkDir: t.TempDir(), Prompt: "x",
 	})
 	if strings.Contains(res.Summary, "--dangerously-skip-permissions") {
-		t.Fatalf("flag should be absent: %s", res.Summary)
+		t.Fatalf("the danger flag must be off by default: %s", res.Summary)
+	}
+	r.SkipPermissions = true
+	res, _ = r.Run(context.Background(), domain.RunRequest{
+		Role: domain.RoleImplementer, WorkDir: t.TempDir(), Prompt: "x",
+	})
+	if !strings.Contains(res.Summary, "--dangerously-skip-permissions") {
+		t.Fatalf("opting in should pass the flag: %s", res.Summary)
 	}
 }
 
