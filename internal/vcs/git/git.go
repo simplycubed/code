@@ -18,6 +18,13 @@ type Git struct {
 	Bin string
 	// Remote is the push remote; defaults to "origin".
 	Remote string
+	// AuthorName and AuthorEmail identify the committer. A GitHub Actions
+	// runner has no git identity configured, so a commit there fails with
+	// "Author identity unknown" unless one is supplied. They are passed per
+	// command rather than written to global config, so a run never mutates the
+	// machine it happens to be on.
+	AuthorName  string
+	AuthorEmail string
 	// ScratchPaths are worktree-relative paths of transient agent scratch (build
 	// and module caches the engine writes inside the worktree). They are removed
 	// before staging so they never land in a commit. Defaults to .gocache,
@@ -30,6 +37,18 @@ func (g *Git) scratchPaths() []string {
 		return g.ScratchPaths
 	}
 	return []string{".gocache", ".gopath", ".simplycubed"}
+}
+
+// identity returns the -c overrides that name the committer, when set.
+func (g *Git) identity() []string {
+	var args []string
+	if g.AuthorName != "" {
+		args = append(args, "-c", "user.name="+g.AuthorName)
+	}
+	if g.AuthorEmail != "" {
+		args = append(args, "-c", "user.email="+g.AuthorEmail)
+	}
+	return args
 }
 
 func (g *Git) bin() string {
@@ -77,7 +96,7 @@ func (g *Git) Commit(ctx context.Context, dir, message string) (bool, error) {
 	if staged.Run() == nil {
 		return false, nil
 	}
-	if _, err := g.run(ctx, dir, "commit", "-m", message); err != nil {
+	if _, err := g.run(ctx, dir, append(g.identity(), "commit", "-m", message)...); err != nil {
 		return false, err
 	}
 	return true, nil

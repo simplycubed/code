@@ -31,4 +31,11 @@ type Forge interface {
 	// CommentPR posts a comment on a pull request. It is distinct from Comment
 	// because pull requests and issues are different surfaces to the GitHub CLI.
 	CommentPR(ctx context.Context, repo string, pr int, body string) error
+	// CanWrite reports whether login has write or admin access to repo. It
+	// answers "may this person trigger the agent", which is the security
+	// question the runtime asks before doing anything else.
+	CanWrite(ctx context.Context, repo, login string) (bool, error)
+	// Whoami returns the login the current credential acts as. The loop uses it
+	// to recognise its own output, so it never addresses its own review.
+	Whoami(ctx context.Context) (string, error)
 }

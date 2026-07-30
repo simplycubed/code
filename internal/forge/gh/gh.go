@@ -108,6 +108,54 @@ func (f *Forge) EnsureLabels(ctx context.Context, labels []string) ([]string, er
 	return created, nil
 }
 
+type ghPermission struct {
+	Permission string `json:"permission"`
+}
+
+// CanWrite reports whether login may trigger the agent on repo. Anything other
+// than write or admin is a no: a stranger who can open an issue on a public
+// repository must not be able to start a run on it.
+func (f *Forge) CanWrite(ctx context.Context, repo, login string) (bool, error) {
+	out, err := f.runJSON(ctx, "api", fmt.Sprintf("repos/%s/collaborators/%s/permission", repo, login))
+	if err != nil {
+		// GitHub answers 404 for a login with no access at all, which is a
+		// definitive no rather than a failure to determine.
+		if strings.Contains(err.Error(), "404") || strings.Contains(err.Error(), "Not Found") {
+			return false, nil
+		}
+		return false, err
+	}
+	var p ghPermission
+	if err := json.Unmarshal(out, &p); err != nil {
+		return false, fmt.Errorf("gh api permission: parse: %w", err)
+	}
+	return p.Permission == "write" || p.Permission == "admin", nil
+}
+
+type ghViewer struct {
+	Data struct {
+		Viewer struct {
+			Login string `json:"login"`
+		} `json:"viewer"`
+	} `json:"data"`
+}
+
+// Whoami returns the login the current credential acts as.
+func (f *Forge) Whoami(ctx context.Context) (string, error) {
+	out, err := f.runJSON(ctx, "api", "graphql", "-f", "query=query { viewer { login } }")
+	if err != nil {
+		return "", err
+	}
+	var v ghViewer
+	if err := json.Unmarshal(out, &v); err != nil {
+		return "", fmt.Errorf("gh api graphql viewer: parse: %w", err)
+	}
+	if v.Data.Viewer.Login == "" {
+		return "", fmt.Errorf("gh api graphql viewer: empty login")
+	}
+	return v.Data.Viewer.Login, nil
+}
+
 // OpenPR creates a pull request from an already-pushed head branch and returns
 // its URL. See the package doc: the branch must exist on the remote first.
 func (f *Forge) OpenPR(ctx context.Context, repo, branch, title, body string) (string, error) {

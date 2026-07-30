@@ -22,7 +22,9 @@ jobs:
       github-app-private-key: ${{ secrets.SIMPLYCUBED_GH_APP_PRIVATE_KEY }}
 
   address:
-    if: ${{ github.event_name == 'pull_request_review' }}
+    if: >-
+      github.event_name == 'pull_request_review' &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.review.author_association)
     uses: simplycubed/code/.github/workflows/simplycubed.yml@__SIMPLYCUBED_TAG__
     with:
       ref: ${{ github.event.pull_request.number }}
