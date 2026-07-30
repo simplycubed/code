@@ -201,3 +201,42 @@ func TestResolveBaseErrorsWhenNoDefaultBranchCanBeFound(t *testing.T) {
 		t.Fatalf("error should name the base it could not resolve: %v", err)
 	}
 }
+
+func TestAddFailsWhenTheBaseCannotBeResolved(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	m := &Manager{RepoDir: initRepo(t), BaseDir: t.TempDir()}
+
+	// A named base that does not exist must surface as an error from Add, not
+	// as a worktree quietly created from something else.
+	if _, err := m.Add(context.Background(), "sc/57", "origin/nope"); err == nil {
+		t.Fatal("expected Add to fail when the base ref cannot be resolved")
+	}
+}
+
+func TestAddReportsWhatGitSaidWhenCreationFails(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	baseDir := t.TempDir()
+	// Occupy the path the worktree would be created at, so git refuses.
+	occupied := filepath.Join(baseDir, "sc-57")
+	if err := os.MkdirAll(occupied, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(occupied, "in-the-way"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := &Manager{RepoDir: initRepo(t), BaseDir: baseDir}
+
+	_, err := m.Add(context.Background(), "sc/57", "HEAD")
+	if err == nil {
+		t.Fatal("expected Add to fail when the target path is occupied")
+	}
+	// git's own message has to reach the operator; a bare "worktree add failed"
+	// would leave them with nothing to act on.
+	if !strings.Contains(err.Error(), "sc/57") {
+		t.Fatalf("error should name the branch: %v", err)
+	}
+}
