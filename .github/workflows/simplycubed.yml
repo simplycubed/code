@@ -130,25 +130,6 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets['gh-token'] != '' && secrets['gh-token'] || github.token }}
 
-      - name: Authorize reviewer
-        env:
-          ACTOR_LOGIN: ${{ inputs['actor-login'] }}
-          GH_TOKEN: ${{ env.SIMPLYCUBED_AUTH_TOKEN }}
-        run: |
-          permission="$(gh api "repos/${GITHUB_REPOSITORY}/collaborators/${ACTOR_LOGIN}/permission" --jq .permission)" || {
-            echo "actor ${ACTOR_LOGIN} is not authorized to run SimplyCubed on ${GITHUB_REPOSITORY}" >&2
-            exit 1
-          }
-          case "${permission}" in
-            write|admin)
-              echo "authorized ${ACTOR_LOGIN} with ${permission} permission"
-              ;;
-            *)
-              echo "actor ${ACTOR_LOGIN} must have write or admin on ${GITHUB_REPOSITORY}; got ${permission}" >&2
-              exit 1
-              ;;
-          esac
-
       - name: Resolve token identity
         id: identity
         env:
@@ -180,6 +161,26 @@ jobs:
             exit 0
           fi
           echo "skip=false" >> "${GITHUB_OUTPUT}"
+
+      - name: Authorize reviewer
+        if: ${{ steps.self-review.outputs.skip != 'true' }}
+        env:
+          ACTOR_LOGIN: ${{ inputs['actor-login'] }}
+          GH_TOKEN: ${{ env.SIMPLYCUBED_AUTH_TOKEN }}
+        run: |
+          permission="$(gh api "repos/${GITHUB_REPOSITORY}/collaborators/${ACTOR_LOGIN}/permission" --jq .permission)" || {
+            echo "actor ${ACTOR_LOGIN} is not authorized to run SimplyCubed on ${GITHUB_REPOSITORY}" >&2
+            exit 1
+          }
+          case "${permission}" in
+            write|admin)
+              echo "authorized ${ACTOR_LOGIN} with ${permission} permission"
+              ;;
+            *)
+              echo "actor ${ACTOR_LOGIN} must have write or admin on ${GITHUB_REPOSITORY}; got ${permission}" >&2
+              exit 1
+              ;;
+          esac
 
       - name: Set up Go
         if: ${{ steps.self-review.outputs.skip != 'true' }}
