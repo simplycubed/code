@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -213,5 +214,74 @@ func TestFeedbackFiltersToHeadAndExcludesSelf(t *testing.T) {
 	}
 	if !sawReview || !sawInline {
 		t.Fatalf("expected the head review and inline comment; notes=%+v", fb.Notes)
+	}
+}
+
+// stubGHReplying writes a gh stub whose stdout is fixed, so the JSON-parsing
+// paths can be exercised without a network.
+func stubGHReplying(t *testing.T, stdout string, exit int) string {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("gh stub is a POSIX shell script")
+	}
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "gh")
+	// Real gh reports failures on stderr, and the 404 detection reads the error
+	// text, so the stub has to put it in the same place.
+	redirect := ""
+	if exit != 0 {
+		redirect = " >&2"
+	}
+	script := "#!/bin/sh\n" +
+		"cat" + redirect + " <<'OUT'\n" + stdout + "\nOUT\n" +
+		"exit " + strconv.Itoa(exit) + "\n"
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return bin
+}
+
+func TestCanWrite(t *testing.T) {
+	ctx := context.Background()
+	// Only write and admin may trigger a run. read is the case that matters:
+	// a public repository grants it to everyone.
+	for perm, want := range map[string]bool{
+		"admin": true, "write": true, "read": false, "none": false,
+	} {
+		f := &Forge{Bin: stubGHReplying(t, `{"permission":"`+perm+`"}`, 0)}
+		got, err := f.CanWrite(ctx, "o/r", "someone")
+		if err != nil {
+			t.Fatalf("%s: unexpected error: %v", perm, err)
+		}
+		if got != want {
+			t.Fatalf("permission %q -> %v, want %v", perm, got, want)
+		}
+	}
+}
+
+// GitHub answers 404 for a login with no access at all. That is a definitive
+// no, not a failure to determine, so it must not stop the run with an error.
+func TestCanWriteTreats404AsNo(t *testing.T) {
+	f := &Forge{Bin: stubGHReplying(t, "gh: Not Found (HTTP 404)", 1)}
+	got, err := f.CanWrite(context.Background(), "o/r", "stranger")
+	if err != nil {
+		t.Fatalf("a 404 should be a plain no, got error: %v", err)
+	}
+	if got {
+		t.Fatal("a 404 must not grant access")
+	}
+}
+
+func TestWhoami(t *testing.T) {
+	f := &Forge{Bin: stubGHReplying(t, `{"data":{"viewer":{"login":"simplycubed-code[bot]"}}}`, 0)}
+	got, err := f.Whoami(context.Background())
+	if err != nil || got != "simplycubed-code[bot]" {
+		t.Fatalf("Whoami() = %q, %v", got, err)
+	}
+	// An empty login is not a usable identity; reporting it as one would make
+	// the self-review filter match everything.
+	empty := &Forge{Bin: stubGHReplying(t, `{"data":{"viewer":{"login":""}}}`, 0)}
+	if _, err := empty.Whoami(context.Background()); err == nil {
+		t.Fatal("an empty login must be an error")
 	}
 }
