@@ -26,3 +26,12 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
       - run: make check
+
+  checks-pass:
+    if: ${{ always() }}
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any check matrix leg failed
+        if: ${{ needs.check.result != 'success' }}
+        run: exit 1
