@@ -364,7 +364,9 @@ func TestCallerWorkflowTemplateMatchesDocsTemplate(t *testing.T) {
 		t.Fatalf("read docs template: %v", err)
 	}
 
-	got := []byte(renderCallerWorkflow("v0.1.0"))
+	// Render at the latest known tag: the docs template pins the current
+	// release, so a release bump that misses either copy fails here.
+	got := []byte(renderCallerWorkflow(latestKnownWorkflowTag))
 	if !bytes.Equal(got, want) {
 		t.Fatalf("rendered embedded template does not match docs template\nrendered:\n%s\n\ndocs:\n%s", got, want)
 	}
