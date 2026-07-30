@@ -2,7 +2,7 @@
 
 An autonomous coding agent that lives inside your own GitHub. You file an issue, it opens a pull request, and a human decides whether to merge.
 
-> Status: early. This repo is at the beginning of its life and is not yet usable. Read this as a statement of intent and an architecture sketch, not a finished tool. See [Status](#status).
+> Status: beta. The core issue-to-pull-request flow works end to end; expect rough edges, and there is no stable release yet. See [Status](#status).
 
 ## What it is
 
@@ -80,7 +80,7 @@ The first engine adapter targets the Codex CLI running against Azure OpenAI (GPT
 
 ## Status
 
-Early, and honest about it. This is a new public repository near the start of its life, not a shipped product. There are no releases to rely on yet.
+Beta, and honest about it. The core issue-to-pull-request flow runs end to end (via the CLI, with the Codex-on-Azure engine), but there is no stable release yet and you should expect rough edges.
 
 Roadmap, roughly in order:
 
