@@ -104,6 +104,46 @@ func TestCommentPRUsesPRSurface(t *testing.T) {
 	}
 }
 
+func TestEnsureLabelsCreatesOnlyMissingLabels(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("gh stub is a POSIX shell script")
+	}
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "gh")
+	log := filepath.Join(dir, "args.log")
+	script := `#!/bin/sh
+printf '%s\n' "$*" >> "$GH_STUB_LOG"
+if [ "$1 $2" = "label list" ]; then
+  echo '[{"name":"sc:go"},{"name":"sc:done"}]'
+  exit 0
+fi
+exit 0
+`
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GH_STUB_LOG", log)
+
+	f := &Forge{Bin: bin}
+	created, err := f.EnsureLabels(context.Background(), []string{"sc:go", "sc:queued", "sc:done"})
+	if err != nil {
+		t.Fatalf("EnsureLabels: %v", err)
+	}
+	if strings.Join(created, ",") != "sc:queued" {
+		t.Fatalf("created = %v, want [sc:queued]", created)
+	}
+	logged := readLog(t, log)
+	if !strings.Contains(logged, "label list --limit 1000 --json name") {
+		t.Fatalf("did not list labels first: %s", logged)
+	}
+	if !strings.Contains(logged, "label create sc:queued") {
+		t.Fatalf("missing label not created: %s", logged)
+	}
+	if strings.Contains(logged, "label create sc:go") || strings.Contains(logged, "label create sc:done") {
+		t.Fatalf("existing labels should be left untouched: %s", logged)
+	}
+}
+
 // stubGHFeedback writes a gh stub that returns canned PR metadata, reviews, and
 // review comments, so the freshness and self filters in Feedback can be tested
 // without GitHub. The head SHA is "HEAD1"; anything at "OLD0" is stale.

@@ -23,6 +23,9 @@ import (
 type Forge struct {
 	// Bin is the gh binary; defaults to "gh".
 	Bin string
+	// Dir is the working directory for gh commands. Empty uses the current
+	// process directory.
+	Dir string
 	// StateLabels is the full set of mutually-exclusive state labels (for example
 	// "sc:go", "sc:queued", ... "sc:done"). SetState removes every one of these
 	// other than the label being set, so exactly one state label remains on the
@@ -42,8 +45,16 @@ func (f *Forge) bin() string {
 	return "gh"
 }
 
-func (f *Forge) run(ctx context.Context, args ...string) (string, error) {
+func (f *Forge) command(ctx context.Context, args ...string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, f.bin(), args...)
+	if f.Dir != "" {
+		cmd.Dir = f.Dir
+	}
+	return cmd
+}
+
+func (f *Forge) run(ctx context.Context, args ...string) (string, error) {
+	cmd := f.command(ctx, args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return string(out), fmt.Errorf("gh %s: %w: %s", args[0], err, strings.TrimSpace(string(out)))
@@ -55,7 +66,7 @@ func (f *Forge) run(ctx context.Context, args ...string) (string, error) {
 // deprecation, an auth or rate-limit warning) never contaminates the JSON that
 // stdout is expected to carry. On failure it surfaces stderr in the error.
 func (f *Forge) runJSON(ctx context.Context, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, f.bin(), args...)
+	cmd := f.command(ctx, args...)
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -63,6 +74,38 @@ func (f *Forge) runJSON(ctx context.Context, args ...string) ([]byte, error) {
 		return nil, fmt.Errorf("gh %s: %w: %s", args[0], err, strings.TrimSpace(stderr.String()))
 	}
 	return []byte(stdout.String()), nil
+}
+
+type ghLabel struct {
+	Name string `json:"name"`
+}
+
+// EnsureLabels creates each label that does not already exist in the repo and
+// returns the labels it created. Existing labels are left untouched.
+func (f *Forge) EnsureLabels(ctx context.Context, labels []string) ([]string, error) {
+	out, err := f.runJSON(ctx, "label", "list", "--limit", "1000", "--json", "name")
+	if err != nil {
+		return nil, err
+	}
+	var listed []ghLabel
+	if err := json.Unmarshal(out, &listed); err != nil {
+		return nil, fmt.Errorf("gh label list: parse: %w", err)
+	}
+	existing := make(map[string]struct{}, len(listed))
+	for _, label := range listed {
+		existing[label.Name] = struct{}{}
+	}
+	var created []string
+	for _, label := range labels {
+		if _, ok := existing[label]; ok {
+			continue
+		}
+		if _, err := f.run(ctx, "label", "create", label); err != nil {
+			return created, err
+		}
+		created = append(created, label)
+	}
+	return created, nil
 }
 
 // OpenPR creates a pull request from an already-pushed head branch and returns
