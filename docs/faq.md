@@ -6,15 +6,17 @@ gate be, and why won't the agent run until it is right?**
 
 ## Do I have to install the GitHub App to try it?
 
-No. Today SimplyCubed Code runs as a local CLI (`simplycubed run` and
-`simplycubed address`) using your own `gh` authentication. It reads the repo's
-config, works in a git worktree, runs your gate, and opens or updates a pull
-request as you.
+No. You can try SimplyCubed Code two ways today:
 
-The GitHub App (`simplycubed-code[bot]`) is for the event-driven runtime that
-runs inside your own GitHub Actions. That runtime is on the roadmap and not built
-yet, so installing the App today does not do anything on its own. Onboard through
-the CLI first; install the App when the Actions runtime ships.
+- as a local CLI (`simplycubed run` and `simplycubed address`) using your own
+  `gh` authentication, which reads the repo config, works in a git worktree,
+  runs your gate, and opens or updates a pull request as you;
+- or through the reusable workflow that runs inside your own GitHub Actions, as
+  described in the README's install section.
+
+The GitHub App identity (`simplycubed-code[bot]`) is still the intended audit
+signal for the hosted-in-your-GitHub runtime, but the workflow can run today
+without a separate App install by using `github.token` or an optional PAT.
 
 ## Are the `sc:` labels created for me?
 
