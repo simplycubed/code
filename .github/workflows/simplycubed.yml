@@ -36,7 +36,7 @@ on:
         type: string
       version:
         description: SimplyCubed CLI tag to install.
-        default: v0.1.2
+        default: v0.1.3
         required: false
         type: string
     secrets:
