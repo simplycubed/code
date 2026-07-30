@@ -6,6 +6,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -149,6 +150,31 @@ func AddressPR(ctx context.Context, d Deps, cfg *config.Config, repo string, pr 
 		Branch: fb.Branch,
 		Prompt: roles.AssembleFix(fb, cfg.Gate),
 	})
+}
+
+// ErrUnauthorized is returned when the actor who triggered a run does not have
+// write access to the repository. It is a refusal, not a failure: the loop did
+// not run, and nothing was changed.
+var ErrUnauthorized = errors.New("app: actor is not authorized to run on this repository")
+
+// Authorize reports whether actor may trigger the agent on repo. An empty actor
+// means the caller did not supply one (a local run by a human), which is
+// allowed: the credential itself is the authorization there.
+//
+// This lives here rather than in the workflow because it is the security
+// question the product answers, and here it is reachable by a test.
+func Authorize(ctx context.Context, d Deps, repo, actor string) error {
+	if actor == "" {
+		return nil
+	}
+	ok, err := d.Forge.CanWrite(ctx, repo, actor)
+	if err != nil {
+		return fmt.Errorf("app: check %s access to %s: %w", actor, repo, err)
+	}
+	if !ok {
+		return fmt.Errorf("%w: %s needs write or admin on %s", ErrUnauthorized, actor, repo)
+	}
+	return nil
 }
 
 // Run onboards a worktree for the issue and runs the loop against cfg.Gate. base

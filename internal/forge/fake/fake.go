@@ -21,6 +21,15 @@ type Forge struct {
 	PRComments []string
 	// URL is returned by OpenPR; a default is used if empty.
 	URL string
+	// Writers maps a login to whether it may trigger the agent. Absent means no.
+	Writers map[string]bool
+	// CanWriteCalls records the logins CanWrite was asked about.
+	CanWriteCalls []string
+	// CanWriteErr, when set, makes CanWrite fail.
+	CanWriteErr error
+	// Login is what Whoami reports; WhoamiErr makes it fail.
+	Login     string
+	WhoamiErr error
 	// Feedbacks is a scripted queue returned by successive Feedback calls; the
 	// last entry is repeated once the queue is drained. A zero value returns
 	// empty feedback (nothing to address).
@@ -79,6 +88,26 @@ func (f *Forge) Feedback(_ context.Context, _ string, pr int) (domain.ReviewFeed
 	}
 	f.fbCalls++
 	return f.Feedbacks[i], nil
+}
+
+// CanWrite reports the scripted answer. The zero value denies, so a test must
+// opt in to an authorized actor rather than get one by accident.
+func (f *Forge) CanWrite(_ context.Context, _, login string) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.CanWriteCalls = append(f.CanWriteCalls, login)
+	if f.CanWriteErr != nil {
+		return false, f.CanWriteErr
+	}
+	return f.Writers[login], nil
+}
+
+// Whoami returns the scripted identity of the current credential.
+func (f *Forge) Whoami(_ context.Context) (string, error) {
+	if f.WhoamiErr != nil {
+		return "", f.WhoamiErr
+	}
+	return f.Login, nil
 }
 
 // SawState reports whether a label was ever set.
