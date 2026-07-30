@@ -138,3 +138,66 @@ func TestResolveBaseKeepsAnExistingRefAndReportsAMissingOne(t *testing.T) {
 		t.Fatal("a missing named base must error rather than fall back")
 	}
 }
+
+// gitIn runs a git command in dir and reports whether it succeeded.
+func gitIn(t *testing.T, dir string, args ...string) bool {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	return cmd.Run() == nil
+}
+
+// unreachableClone reproduces the harder half of issue #57: origin/HEAD is
+// absent AND the remote cannot be asked for it (no network on the runner, a
+// deleted remote, a credential that has expired). Only the local remote-tracking
+// refs are left to go on.
+func unreachableClone(t *testing.T) string {
+	t.Helper()
+	src := initRepo(t)
+	if !gitIn(t, src, "branch", "-M", "main") {
+		t.Fatal("could not name the source branch main")
+	}
+	dir := cloneOf(t, src, true)
+	if !gitIn(t, dir, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "gone.git")) {
+		t.Fatal("could not point origin at a missing path")
+	}
+	return dir
+}
+
+func TestResolveBaseFallsBackToOriginMainWhenTheRemoteIsUnreachable(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	dir := unreachableClone(t)
+	m := &Manager{RepoDir: dir, BaseDir: t.TempDir()}
+	ctx := context.Background()
+
+	got, err := m.ResolveBase(ctx, "origin/HEAD")
+	if err != nil {
+		t.Fatalf("expected a fallback to the conventional branch, got: %v", err)
+	}
+	if got != "origin/main" {
+		t.Fatalf("base = %q, want origin/main", got)
+	}
+}
+
+func TestResolveBaseErrorsWhenNoDefaultBranchCanBeFound(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	dir := unreachableClone(t)
+	// Remove the last thing it could fall back to.
+	if !gitIn(t, dir, "update-ref", "-d", "refs/remotes/origin/main") {
+		t.Fatal("could not remove the remote-tracking branch")
+	}
+	m := &Manager{RepoDir: dir, BaseDir: t.TempDir()}
+
+	_, err := m.ResolveBase(context.Background(), "origin/HEAD")
+	if err == nil {
+		t.Fatal("expected an error when no base can be resolved")
+	}
+	// The message has to say what it tried, or the operator is left guessing.
+	if !strings.Contains(err.Error(), "origin/HEAD") {
+		t.Fatalf("error should name the base it could not resolve: %v", err)
+	}
+}
