@@ -3,6 +3,13 @@
 All notable changes are recorded here and summarized again in the matching
 GitHub release notes for each tag.
 
+## v0.1.4
+
+- Fixed the blocker that made every GitHub Actions run fail before doing any
+  work: the CLI defaulted `--base` to `origin/HEAD`, which `actions/checkout`
+  never creates. The worktree manager now resolves the remote's default branch,
+  and the reusable workflow passes the base from the triggering event.
+
 ## v0.1.3
 
 Supersedes v0.1.2, which was tagged from the wrong commit and is retracted in
