@@ -24,6 +24,7 @@ func initRepo(t *testing.T) string {
 	run("init", "-q")
 	run("config", "user.email", "t@example.test")
 	run("config", "user.name", "t")
+	run("config", "commit.gpgsign", "false") // don't depend on a host GPG agent
 	if err := os.WriteFile(filepath.Join(dir, "f.txt"), []byte("hello\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
