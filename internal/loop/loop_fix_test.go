@@ -130,3 +130,26 @@ func TestFixStateFallsBackToPRWhenNoIssue(t *testing.T) {
 		t.Fatal("expected the review label to be set on the PR when there is no linked issue")
 	}
 }
+
+func TestFixWorkflowChangesBlockBeforeTheGateWhenAppCannotPushThem(t *testing.T) {
+	dir := t.TempDir()
+	v := &fakeVCS{workflows: true}
+	eng, f := newFixEngine(dir, v, enginefake.New(
+		enginefake.Step{Summary: "updated the caller workflow", Apply: writeFixed},
+	))
+	eng.Cfg.WorkflowRestrictedPush = true
+
+	res, err := eng.Fix(context.Background(), fixReq())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.Outcome != OutcomeBlocked {
+		t.Fatalf("outcome = %s want blocked", res.Outcome)
+	}
+	if v.commitDone || v.pushDone {
+		t.Fatalf("workflow pre-flight must block before commit/push; commit=%v push=%v", v.commitDone, v.pushDone)
+	}
+	if len(f.PRComments) == 0 || !strings.Contains(f.PRComments[0], "lacks `workflows` permission") {
+		t.Fatalf("expected actionable PR comment, got %v", f.PRComments)
+	}
+}
