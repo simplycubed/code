@@ -55,7 +55,20 @@ func TestCommitReportsWhetherAnythingChanged(t *testing.T) {
 		t.Fatalf("expected no-op commit, got committed=%v err=%v", committed, err)
 	}
 
-	// A real change: committed=true.
+	// Only scratch present (no real change): still a no-op, because scratch is
+	// excluded. This is what stops an empty run from opening a PR.
+	if err := os.MkdirAll(filepath.Join(work, ".gocache"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(work, ".gocache", "junk"), []byte("cache"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	committed, err = g.Commit(ctx, work, "scratch only")
+	if err != nil || committed {
+		t.Fatalf("scratch-only should be a no-op, got committed=%v err=%v", committed, err)
+	}
+
+	// A real change alongside scratch: committed=true, and scratch is not in it.
 	if err := os.WriteFile(filepath.Join(work, "a.txt"), []byte("hi"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -63,8 +76,12 @@ func TestCommitReportsWhetherAnythingChanged(t *testing.T) {
 	if err != nil || !committed {
 		t.Fatalf("expected a commit, got committed=%v err=%v", committed, err)
 	}
-	if log := gitCmd(t, work, "log", "--oneline", "-1"); !strings.Contains(log, "add a.txt") {
-		t.Fatalf("commit not recorded: %s", log)
+	tracked := gitCmd(t, work, "ls-files")
+	if !strings.Contains(tracked, "a.txt") {
+		t.Fatalf("a.txt should be committed: %s", tracked)
+	}
+	if strings.Contains(tracked, ".gocache") {
+		t.Fatalf(".gocache must never be committed: %s", tracked)
 	}
 }
 

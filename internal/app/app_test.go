@@ -46,10 +46,6 @@ type recordingEngine struct{ lastPrompt string }
 
 func (r *recordingEngine) Run(_ context.Context, req domain.RunRequest) (domain.RunResult, error) {
 	r.lastPrompt = req.Prompt
-	// Simulate the codex adapter's workspace-local build cache, which must not be
-	// committed.
-	_ = os.MkdirAll(filepath.Join(req.WorkDir, ".gocache"), 0o755)
-	_ = os.WriteFile(filepath.Join(req.WorkDir, ".gocache", "junk"), []byte("cache"), 0o644)
 	return domain.RunResult{Role: req.Role}, os.WriteFile(filepath.Join(req.WorkDir, "fixed"), []byte("x"), 0o644)
 }
 
@@ -112,16 +108,5 @@ func TestRunOnboardsWorktreeAndDrivesLoop(t *testing.T) {
 	if !strings.Contains(eng.lastPrompt, "Never modify the gate") {
 		t.Fatalf("engine prompt did not include the role bounds:\n%s", eng.lastPrompt)
 	}
-
-	// Agent scratch (.gocache) must be git-excluded in the worktree, so a
-	// `git add -A` would never sweep it into a commit.
-	wt := filepath.Join(baseDir, "sc-12")
-	st := exec.Command("git", "-C", wt, "status", "--porcelain")
-	out, err := st.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git status: %v: %s", err, out)
-	}
-	if strings.Contains(string(out), ".gocache") {
-		t.Fatalf("agent scratch .gocache was not excluded; git status:\n%s", out)
-	}
+	_ = baseDir // worktree lives here; scratch exclusion is covered in the git VCS test
 }

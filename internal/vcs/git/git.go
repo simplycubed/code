@@ -16,6 +16,23 @@ type Git struct {
 	Bin string
 	// Remote is the push remote; defaults to "origin".
 	Remote string
+	// ExcludePaths are worktree-relative paths that must never be staged (agent
+	// scratch such as a build cache the engine writes inside the worktree).
+	// Defaults to .gocache and .simplycubed.
+	ExcludePaths []string
+}
+
+func (g *Git) excludePathspecs() []string {
+	ps := g.ExcludePaths
+	if ps == nil {
+		ps = []string{".gocache", ".simplycubed"}
+	}
+	out := make([]string, 0, len(ps)*2)
+	for _, p := range ps {
+		p = strings.TrimSuffix(p, "/")
+		out = append(out, ":(exclude)"+p, ":(exclude)"+p+"/**")
+	}
+	return out
 }
 
 func (g *Git) bin() string {
@@ -42,17 +59,20 @@ func (g *Git) run(ctx context.Context, dir string, args ...string) (string, erro
 	return string(out), nil
 }
 
-// Commit stages all changes and commits them. It returns committed=false, with
-// no error, when the working tree has nothing to commit.
+// Commit stages all changes except the excluded scratch paths and commits them.
+// It returns committed=false, with no error, when nothing (outside the excluded
+// paths) is staged. Excluding at add time means agent scratch such as a build
+// cache never lands in the commit, and an otherwise no-op run is correctly
+// reported as "nothing to commit" even if scratch files exist.
 func (g *Git) Commit(ctx context.Context, dir, message string) (bool, error) {
-	if _, err := g.run(ctx, dir, "add", "-A"); err != nil {
+	addArgs := append([]string{"add", "-A", "--", "."}, g.excludePathspecs()...)
+	if _, err := g.run(ctx, dir, addArgs...); err != nil {
 		return false, err
 	}
-	status, err := g.run(ctx, dir, "status", "--porcelain")
-	if err != nil {
-		return false, err
-	}
-	if strings.TrimSpace(status) == "" {
+	// `diff --cached --quiet` exits 0 when nothing is staged. This looks only at
+	// the index, so untracked (excluded) scratch does not count as a change.
+	staged := exec.CommandContext(ctx, g.bin(), "-C", dir, "diff", "--cached", "--quiet")
+	if staged.Run() == nil {
 		return false, nil
 	}
 	if _, err := g.run(ctx, dir, "commit", "-m", message); err != nil {

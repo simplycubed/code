@@ -7,8 +7,6 @@ package app
 import (
 	"context"
 	"fmt"
-	"os"
-	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
@@ -55,28 +53,6 @@ func StateLabels(prefix string) []string {
 	return out
 }
 
-// agentScratch are worktree-local paths the agent may write but that must never
-// be committed (the workspace-local Go build cache the codex adapter sets, and a
-// reserved dir for future scratch).
-var agentScratch = []string{".gocache/", ".simplycubed/"}
-
-// excludeAgentScratch appends the agent-scratch patterns to the worktree's local
-// git exclude, so they are ignored by `git add -A` without touching the target
-// repo's committed .gitignore. Best-effort: a failure here is not fatal.
-func excludeAgentScratch(ctx context.Context, worktree string) {
-	out, err := exec.CommandContext(ctx, "git", "-C", worktree, "rev-parse", "--git-path", "info/exclude").Output()
-	if err != nil {
-		return
-	}
-	path := strings.TrimSpace(string(out))
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o644)
-	if err != nil {
-		return
-	}
-	defer f.Close()
-	_, _ = f.WriteString("\n# SimplyCubed Code agent scratch (not committed)\n" + strings.Join(agentScratch, "\n") + "\n")
-}
-
 func promptBuilder(gateCmd string) func(domain.Role, domain.Issue) string {
 	return func(role domain.Role, iss domain.Issue) string {
 		def := roles.Implementer
@@ -100,10 +76,6 @@ func Run(ctx context.Context, d Deps, cfg *config.Config, iss domain.Issue, base
 	if err != nil {
 		return loop.Result{}, fmt.Errorf("app: prepare worktree: %w", err)
 	}
-	// Keep agent scratch (build caches, etc.) out of the commit. It lives inside
-	// the worktree so the sandbox can write it, so it must be excluded here or a
-	// `git add -A` would sweep it into the PR (and mask a no-op run as real work).
-	excludeAgentScratch(ctx, wt)
 
 	eng := &loop.Engine{
 		Runner: d.Runner,
