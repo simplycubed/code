@@ -633,3 +633,41 @@ func TestCommandCmdRoutesByCommentBody(t *testing.T) {
 		}
 	})
 }
+
+// Re-running init must never overwrite what an adopter has edited, including
+// the self-test they may have deliberately deleted or changed.
+func TestInitWithWorkflowIsIdempotent(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("gh stub is a POSIX shell script")
+	}
+	repoDir := t.TempDir()
+	stubDir := t.TempDir()
+	stub := filepath.Join(stubDir, "gh")
+	script := "#!/bin/sh\nif [ \"$1 $2\" = \"label list\" ]; then echo '[]'; fi\nexit 0\n"
+	if err := os.WriteFile(stub, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GH_STUB_LOG", filepath.Join(stubDir, "gh.log"))
+	t.Setenv("PATH", stubDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	var first bytes.Buffer
+	if err := initCmd([]string{"--repo-dir", repoDir, "--workflow"}, &first); err != nil {
+		t.Fatalf("first init: %v", err)
+	}
+	selftest := filepath.Join(repoDir, ".github", "workflows", "simplycubed-selftest.yml")
+	if err := os.WriteFile(selftest, []byte("# edited by the adopter\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var second bytes.Buffer
+	if err := initCmd([]string{"--repo-dir", repoDir, "--workflow"}, &second); err != nil {
+		t.Fatalf("second init: %v", err)
+	}
+	if !strings.Contains(second.String(), "left existing "+selftest+" unchanged") {
+		t.Fatalf("second run should report the self-test unchanged:\n%s", second.String())
+	}
+	got, err := os.ReadFile(selftest)
+	if err != nil || !strings.Contains(string(got), "edited by the adopter") {
+		t.Fatalf("the adopter's edit must survive: %q %v", got, err)
+	}
+}
