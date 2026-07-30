@@ -6,7 +6,9 @@ package git
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -16,23 +18,18 @@ type Git struct {
 	Bin string
 	// Remote is the push remote; defaults to "origin".
 	Remote string
-	// ExcludePaths are worktree-relative paths that must never be staged (agent
-	// scratch such as a build cache the engine writes inside the worktree).
-	// Defaults to .gocache and .simplycubed.
-	ExcludePaths []string
+	// ScratchPaths are worktree-relative paths of transient agent scratch (a
+	// build cache the engine writes inside the worktree). They are removed before
+	// staging so they never land in a commit. Defaults to .gocache and
+	// .simplycubed.
+	ScratchPaths []string
 }
 
-func (g *Git) excludePathspecs() []string {
-	ps := g.ExcludePaths
-	if ps == nil {
-		ps = []string{".gocache", ".simplycubed"}
+func (g *Git) scratchPaths() []string {
+	if g.ScratchPaths != nil {
+		return g.ScratchPaths
 	}
-	out := make([]string, 0, len(ps)*2)
-	for _, p := range ps {
-		p = strings.TrimSuffix(p, "/")
-		out = append(out, ":(exclude)"+p, ":(exclude)"+p+"/**")
-	}
-	return out
+	return []string{".gocache", ".simplycubed"}
 }
 
 func (g *Git) bin() string {
@@ -65,12 +62,17 @@ func (g *Git) run(ctx context.Context, dir string, args ...string) (string, erro
 // cache never lands in the commit, and an otherwise no-op run is correctly
 // reported as "nothing to commit" even if scratch files exist.
 func (g *Git) Commit(ctx context.Context, dir, message string) (bool, error) {
-	addArgs := append([]string{"add", "-A", "--", "."}, g.excludePathspecs()...)
-	if _, err := g.run(ctx, dir, addArgs...); err != nil {
+	// Remove transient agent scratch (build cache) so it is never staged. This is
+	// deterministic and avoids pathspec/gitignore edge cases: with the scratch
+	// gone, a plain `git add -A` has nothing problematic to stage.
+	for _, p := range g.scratchPaths() {
+		_ = os.RemoveAll(filepath.Join(dir, strings.TrimSuffix(p, "/")))
+	}
+	if _, err := g.run(ctx, dir, "add", "-A"); err != nil {
 		return false, err
 	}
-	// `diff --cached --quiet` exits 0 when nothing is staged. This looks only at
-	// the index, so untracked (excluded) scratch does not count as a change.
+	// `diff --cached --quiet` exits 0 when nothing is staged, so a run that made
+	// no real change is correctly reported as "nothing to commit".
 	staged := exec.CommandContext(ctx, g.bin(), "-C", dir, "diff", "--cached", "--quiet")
 	if staged.Run() == nil {
 		return false, nil
