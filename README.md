@@ -124,6 +124,14 @@ gate: make check
 prDescription: rich
 ```
 
+Set `review: true` to turn on the automated reviewer. After the gate passes, a read-only reviewer role judges the change and writes a structured verdict; its findings go to the fixer before a human ever sees the pull request, and the verdict summary appears in the pull-request body. It never approves and never merges: a verdict is advice to the loop, and the human review is unchanged.
+
+```yaml
+gate: make check
+
+review: true
+```
+
 A repo with no gate is refused, on purpose. An agent loop with nothing to stop it will wander, break things, and still report success. The gate is the safety mechanism, so the tool treats its absence as a configuration error rather than a default to paper over. The engineering that matters here is the gate, not the loop.
 
 Getting the gate right is where first runs stall: it has to be green on your own `main`, it should mirror what your CI actually enforces, and the genuinely environmental checks (a version matrix, Docker, tests that need a running service) stay in CI. The [FAQ](docs/faq.md) walks through each of these with real onboarding examples.
