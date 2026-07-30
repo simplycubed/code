@@ -6,7 +6,9 @@ package git
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -16,6 +18,18 @@ type Git struct {
 	Bin string
 	// Remote is the push remote; defaults to "origin".
 	Remote string
+	// ScratchPaths are worktree-relative paths of transient agent scratch (a
+	// build cache the engine writes inside the worktree). They are removed before
+	// staging so they never land in a commit. Defaults to .gocache and
+	// .simplycubed.
+	ScratchPaths []string
+}
+
+func (g *Git) scratchPaths() []string {
+	if g.ScratchPaths != nil {
+		return g.ScratchPaths
+	}
+	return []string{".gocache", ".simplycubed"}
 }
 
 func (g *Git) bin() string {
@@ -42,17 +56,25 @@ func (g *Git) run(ctx context.Context, dir string, args ...string) (string, erro
 	return string(out), nil
 }
 
-// Commit stages all changes and commits them. It returns committed=false, with
-// no error, when the working tree has nothing to commit.
+// Commit stages all changes except the excluded scratch paths and commits them.
+// It returns committed=false, with no error, when nothing (outside the excluded
+// paths) is staged. Excluding at add time means agent scratch such as a build
+// cache never lands in the commit, and an otherwise no-op run is correctly
+// reported as "nothing to commit" even if scratch files exist.
 func (g *Git) Commit(ctx context.Context, dir, message string) (bool, error) {
+	// Remove transient agent scratch (build cache) so it is never staged. This is
+	// deterministic and avoids pathspec/gitignore edge cases: with the scratch
+	// gone, a plain `git add -A` has nothing problematic to stage.
+	for _, p := range g.scratchPaths() {
+		_ = os.RemoveAll(filepath.Join(dir, strings.TrimSuffix(p, "/")))
+	}
 	if _, err := g.run(ctx, dir, "add", "-A"); err != nil {
 		return false, err
 	}
-	status, err := g.run(ctx, dir, "status", "--porcelain")
-	if err != nil {
-		return false, err
-	}
-	if strings.TrimSpace(status) == "" {
+	// `diff --cached --quiet` exits 0 when nothing is staged, so a run that made
+	// no real change is correctly reported as "nothing to commit".
+	staged := exec.CommandContext(ctx, g.bin(), "-C", dir, "diff", "--cached", "--quiet")
+	if staged.Run() == nil {
 		return false, nil
 	}
 	if _, err := g.run(ctx, dir, "commit", "-m", message); err != nil {

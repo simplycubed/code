@@ -85,11 +85,12 @@ func TestRunOnboardsWorktreeAndDrivesLoop(t *testing.T) {
 
 	eng := &recordingEngine{}
 	ff := &forgefake.Forge{}
+	baseDir := t.TempDir()
 	d := app.Deps{
 		Runner:    eng,
 		Forge:     ff,
 		VCS:       nil, // exercised in the loop package; here we test the app glue
-		Worktrees: &worktree.Manager{RepoDir: repo, BaseDir: t.TempDir()},
+		Worktrees: &worktree.Manager{RepoDir: repo, BaseDir: baseDir},
 	}
 	cfg := &config.Config{LabelPrefix: "sc", Gate: "test -f fixed"}
 
@@ -107,4 +108,5 @@ func TestRunOnboardsWorktreeAndDrivesLoop(t *testing.T) {
 	if !strings.Contains(eng.lastPrompt, "Never modify the gate") {
 		t.Fatalf("engine prompt did not include the role bounds:\n%s", eng.lastPrompt)
 	}
+	_ = baseDir // worktree lives here; scratch exclusion is covered in the git VCS test
 }
