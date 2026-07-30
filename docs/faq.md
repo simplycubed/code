@@ -17,7 +17,7 @@ You can use SimplyCubed Code two ways:
   described in the README's install section, which now mints a per-job GitHub
   App installation token for `simplycubed-code[bot]`.
 
-The worker App is configured with only `contents`, `pull requests`, and
+The GitHub App is configured with only `contents`, `pull requests`, and
 `issues`, and the reusable workflow proves that scope at runtime by expecting an
 Actions-administration API call to fail.
 

@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       github-app-id:
-        description: GitHub App ID for the SimplyCubed worker App.
+        description: GitHub App ID for the SimplyCubed App.
         required: true
         type: string
       issue-number:
@@ -63,7 +63,7 @@ jobs:
 
       - name: Mint GitHub App token
         id: app-token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v2
         with:
           app-id: ${{ inputs['github-app-id'] }}
           private-key: ${{ secrets['github-app-private-key'] }}
@@ -157,7 +157,7 @@ jobs:
 
       - name: Mint GitHub App token
         id: app-token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v2
         with:
           app-id: ${{ inputs['github-app-id'] }}
           private-key: ${{ secrets['github-app-private-key'] }}

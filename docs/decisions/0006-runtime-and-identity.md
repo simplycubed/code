@@ -28,19 +28,22 @@ contents plus pull requests plus issues, and nothing else. It never receives
 permission over workflows, administration, environments, or secrets, so it cannot
 edit its own CI gate or reach deploy configuration.
 
-## Decision update: two Apps, not one
+## Decision update: one App
 
-Use two Apps: a worker App (`simplycubed-code`) that authors commits, pull
-requests, labels, and comments, and a separate reviewer App for the future
-automated review role.
+Use one App: `simplycubed-code` carries the product's GitHub identity for
+commits, pull requests, labels, and comments. Each job mints its own
+installation token scoped to the current repository and only the permissions it
+needs, preserving least privilege without adding a second principal for the
+current loop.
 
-Reason: a single principal cannot leave a "request changes" review on its own
-pull request. Live runs hit exactly that wall when the CLI authenticated as the
-repo owner, and the same GitHub author/reviewer restriction would still apply if
-both roles shared one App identity. Two Apps preserve the separation GitHub
-enforces at the principal level, while per-job installation tokens still provide
-least privilege inside each role.
+Reason: the automated reviewer role defined in #32 is comment-only by design,
+not a formal approval or request-changes reviewer. GitHub allows a COMMENT
+review from the PR author's own identity; only APPROVE and REQUEST_CHANGES are
+blocked. The current reviewer flow also passes findings in-process from the
+reviewer role to the fixer prompt, not through a GitHub review round-trip, so a
+separate App adds no capability today. Requiring adopters to install two Apps
+for one tool would also be a worse product experience.
 
-Today only the worker App is wired, because the human reviewer remains the
-reviewing principal in the current loop. When the automated reviewer role is
-connected, it must use the second App rather than the worker App's token.
+If a future automated reviewer needs to publish a formal review state rather
+than comments, splitting identities remains an option to revisit. For the
+present design, one App is the accepted decision.

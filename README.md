@@ -44,7 +44,7 @@ The whole thing runs on GitHub Actions, event-driven, with no server and no VM f
 What this buys you:
 
 - Your code stays in your repos. SimplyCubed never receives it.
-- Your model provider keys, the worker App's private key, and any other secrets stay in your GitHub secret store. They are read by your own Actions runs and never transit our infrastructure.
+- Your model provider keys, the GitHub App's private key, and any other secrets stay in your GitHub secret store. They are read by your own Actions runs and never transit our infrastructure.
 - The agent holds no deploy credentials and has no path to production. The most it can do is open a pull request against a branch. A human and your branch protection rules decide what happens next.
 
 The GitHub App identity is `simplycubed-code[bot]`. That bot is the single audit signal for everything the agent does.
@@ -73,13 +73,15 @@ floating on `@latest`.
 
 To run the loop inside your own GitHub Actions:
 
-1. Create and install the worker GitHub App, `simplycubed-code`.
+1. Create and install the GitHub App, `simplycubed-code`.
    Repository permissions: `Contents`, `Pull requests`, and `Issues` only.
    Do not grant `Workflows`, `Administration`, `Environments`, or `Secrets`.
-   Subscribe it to the `Issues` and `Pull request review` webhook events.
+   Disable the App webhook.
    Set install visibility to `Any account`.
+   Install it on the repo.
 2. Copy [`docs/templates/simplycubed-caller.yml`](docs/templates/simplycubed-caller.yml) into the adopter repo as `.github/workflows/simplycubed.yml`, then merge that one workflow pull request. The template pins a released reusable workflow tag (`v0.1.1` today), not `main`.
 3. Add repository variable `SIMPLYCUBED_GH_APP_ID`, repository secret `SIMPLYCUBED_GH_APP_PRIVATE_KEY`, repository variable `AZURE_OPENAI_ENDPOINT`, and repository secret `AZURE_OPENAI_API_KEY`.
+   The private key secret must be the full PEM contents, including the `-----BEGIN` and `-----END` lines.
 4. Run `simplycubed init` once in the adopter repo so `.github/simplycubed.yml` and the `sc:*` labels exist, then merge that setup change.
 5. File an issue and apply the `sc:go` label. Reviews submitted on the resulting pull request call back into the same reusable workflow for the fix-on-request loop.
 
