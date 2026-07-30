@@ -1,0 +1,17 @@
+# Actions are pinned by commit SHA so a moved tag cannot change what runs.
+# A pin nobody updates becomes a stale pin, so Dependabot proposes the bumps
+# and keeps the "# vN" comment beside each SHA in step.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "ci"
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "deps"
