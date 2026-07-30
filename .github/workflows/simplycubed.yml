@@ -51,9 +51,6 @@ jobs:
     runs-on: ubuntu-latest
     concurrency: simplycubed-${{ inputs.ref }}
     permissions: {}
-    env:
-      AZURE_OPENAI_ENDPOINT: ${{ inputs['azure-openai-endpoint'] }}
-      AZURE_OPENAI_API_KEY: ${{ secrets['azure-openai-api-key'] }}
     steps:
       - name: Resolve repository scope
         id: repo
@@ -88,6 +85,9 @@ jobs:
         run: go install github.com/simplycubed/code/cmd/simplycubed@${{ inputs.version }}
 
       - name: Preflight
+        env:
+          AZURE_OPENAI_ENDPOINT: ${{ inputs['azure-openai-endpoint'] }}
+          AZURE_OPENAI_API_KEY: ${{ secrets['azure-openai-api-key'] }}
         run: simplycubed preflight --repo-dir .
 
       - name: Install Codex CLI
@@ -96,6 +96,8 @@ jobs:
       - name: Run SimplyCubed
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          AZURE_OPENAI_ENDPOINT: ${{ inputs['azure-openai-endpoint'] }}
+          AZURE_OPENAI_API_KEY: ${{ secrets['azure-openai-api-key'] }}
           # The engine's own sandbox cannot start inside a runner: bubblewrap
           # cannot create a network namespace here, and every command it tries
           # fails. The runner is the isolation boundary instead - a token scoped
@@ -112,9 +114,6 @@ jobs:
     runs-on: ubuntu-latest
     concurrency: simplycubed-${{ inputs.ref }}
     permissions: {}
-    env:
-      AZURE_OPENAI_ENDPOINT: ${{ inputs['azure-openai-endpoint'] }}
-      AZURE_OPENAI_API_KEY: ${{ secrets['azure-openai-api-key'] }}
     steps:
       - name: Resolve repository scope
         id: repo
@@ -149,6 +148,9 @@ jobs:
         run: go install github.com/simplycubed/code/cmd/simplycubed@${{ inputs.version }}
 
       - name: Preflight
+        env:
+          AZURE_OPENAI_ENDPOINT: ${{ inputs['azure-openai-endpoint'] }}
+          AZURE_OPENAI_API_KEY: ${{ secrets['azure-openai-api-key'] }}
         run: simplycubed preflight --repo-dir .
 
       - name: Install Codex CLI
@@ -157,5 +159,7 @@ jobs:
       - name: Address review feedback
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          AZURE_OPENAI_ENDPOINT: ${{ inputs['azure-openai-endpoint'] }}
+          AZURE_OPENAI_API_KEY: ${{ secrets['azure-openai-api-key'] }}
           SIMPLYCUBED_SANDBOX: danger-full-access
         run: simplycubed address "${GITHUB_REPOSITORY}#${{ inputs['pr-number'] }}" --actor "${{ inputs['actor-login'] }}" --model "${{ inputs.model }}" --repo-dir .
