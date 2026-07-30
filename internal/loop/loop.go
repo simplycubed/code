@@ -16,6 +16,7 @@ import (
 	"github.com/simplycubed/code/internal/gate"
 	"github.com/simplycubed/code/internal/ledger"
 	"github.com/simplycubed/code/internal/state"
+	"github.com/simplycubed/code/internal/verdict"
 )
 
 // Outcome is how a run ended.
@@ -77,6 +78,16 @@ type Engine struct {
 	// the raw issue body. The app wires this to the roles package so the bounds
 	// (never edit the gate or tests to pass) travel with every turn.
 	Prompt func(role domain.Role, iss domain.Issue) string
+	// Review, when set, runs after the gate passes and judges the pending
+	// change. It returns the verdict and whether one was produced at all. The
+	// loop uses it to decide whether to open the pull request or hand findings
+	// to the fixer first. Nil means no automated review, which is the behaviour
+	// before this was wired.
+	Review func(ctx context.Context, iss domain.Issue) (domain.Verdict, bool)
+	// Fix, when set, addresses reviewer findings in-process before the pull
+	// request opens, so the human sees a change that has already answered the
+	// machine review.
+	FixFindings func(ctx context.Context, iss domain.Issue, notes []domain.ReviewNote) error
 	// Describe, when set, runs once after the gate passes and before the change
 	// is committed, and returns extra markdown for the pull-request body (issue
 	// #16). It is best-effort by contract: "" means the plain body, and no
@@ -93,6 +104,9 @@ type Engine struct {
 	// It is attached to an escalation so a human reading a blocked issue sees
 	// the agent's own account rather than only the loop's verdict.
 	lastSummary string
+	// lastVerdict is the most recent automated review, surfaced in the pull
+	// request so the human can see what the machine already checked.
+	lastVerdict domain.Verdict
 }
 
 // withSummary appends the engine's account of its last turn to an escalation
@@ -176,7 +190,10 @@ func (e *Engine) Run(ctx context.Context, iss domain.Issue) (Result, error) {
 		}
 		e.log(iss, ledger.Event{Phase: ledger.PhaseRound, Round: round, Gate: gateStr})
 		if gr.Passed {
-			return e.openPR(ctx, iss, prefix, round)
+			if done, res, err := e.review(ctx, iss, prefix, round); done {
+				return res, err
+			}
+			continue
 		}
 		// Red. Stall detection: two reds in a row with the same signature means
 		// the change is not moving the failure. Stop rather than burn rounds.
@@ -301,6 +318,49 @@ func (e *Engine) fixEscalate(ctx context.Context, req FixRequest, prefix string,
 	return Result{Outcome: OutcomeBlocked, Rounds: round, Reason: reason}, nil
 }
 
+// review runs the automated reviewer once the gate is green. It reports whether
+// the run reached a terminal outcome. A verdict that is absent, malformed, or
+// pessimistic does not open a pull request; findings go to the fixer and the
+// loop takes another round, so the human reads a change the machine has already
+// argued with.
+func (e *Engine) review(ctx context.Context, iss domain.Issue, prefix string, round int) (bool, Result, error) {
+	if e.Review == nil {
+		res, err := e.openPR(ctx, iss, prefix, round)
+		return true, res, err
+	}
+	v, ok := e.Review(ctx, iss)
+	if !ok {
+		// No usable verdict. Silence is not approval, but it is also not a
+		// finding to act on, so the change goes to the human as it stands.
+		res, err := e.openPR(ctx, iss, prefix, round)
+		return true, res, err
+	}
+	e.lastVerdict = v
+	if verdict.Trusted(v) {
+		res, err := e.openPR(ctx, iss, prefix, round)
+		return true, res, err
+	}
+	notes := verdict.Render(v)
+	if len(notes) == 0 {
+		// It withheld a pass without saying why. There is nothing to fix, so a
+		// human decides rather than the loop spinning.
+		res, err := e.escalate(ctx, iss, prefix, round, "reviewer withheld a pass but reported no findings")
+		return true, res, err
+	}
+	if e.FixFindings == nil {
+		res, err := e.escalate(ctx, iss, prefix, round, "reviewer found problems and no fixer is wired")
+		return true, res, err
+	}
+	if err := e.FixFindings(ctx, iss, notes); err != nil {
+		res, err2 := e.escalate(ctx, iss, prefix, round, "addressing reviewer findings failed: "+err.Error())
+		if err2 != nil {
+			return true, res, err2
+		}
+		return true, res, nil
+	}
+	return false, Result{}, nil
+}
+
 func (e *Engine) openPR(ctx context.Context, iss domain.Issue, prefix string, round int) (Result, error) {
 	// Compose the rich description first: its artifact lives in the scratch
 	// directory, which the commit below deletes before staging.
@@ -327,6 +387,9 @@ func (e *Engine) openPR(ctx context.Context, iss domain.Issue, prefix string, ro
 	}
 
 	content := "Automated change from an issue. A human reviews and merges; this loop does not."
+	if s := strings.TrimSpace(e.lastVerdict.Summary); s != "" {
+		content += "\n\n**Automated review:** " + s
+	}
 	if description != "" {
 		content += "\n\n" + description
 	}
