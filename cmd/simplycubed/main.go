@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -38,6 +39,11 @@ func main() {
 	switch args[0] {
 	case "version", "--version", "-v":
 		fmt.Println(buildinfo.Version)
+	case "init":
+		if err := initCmd(args[1:], os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
 	case "run":
 		if err := runCmd(args[1:]); err != nil {
 			fmt.Fprintln(os.Stderr, "error:", err)
@@ -59,6 +65,7 @@ func usage() {
 
 usage:
   simplycubed version
+  simplycubed init [--repo-dir .]
   simplycubed run <owner/repo#N> [flags]
   simplycubed address <owner/repo#PR> [flags]
 
@@ -77,6 +84,23 @@ environment (engine settings; never committed to a repo):
   AZURE_OPENAI_API_KEY    the key, read by name and never written to disk
 `, buildinfo.Version)
 }
+
+const starterConfig = `# Repository-local contract for SimplyCubed Code.
+# Keep the label prefix unless you already run another sc:* lifecycle.
+labelPrefix: sc
+
+# Required. Fill this in with the real gate that is already green on main.
+gate:
+
+# Optional. One-time setup command before each run (install deps, generate code).
+# setup:
+
+# Optional. Disable the generated commit/PR attribution marker.
+# attribution: false
+
+# Optional. Ask the agent to add a generated walkthrough and changes table to PRs.
+# prDescription: rich
+`
 
 // commonFlags are the flags shared by run and address, plus the resolved config
 // and dependency graph both commands need.
@@ -216,6 +240,58 @@ func addressCmd(argv []string) error {
 		fmt.Printf("blocked after %d round(s): %s\n", res.Rounds, res.Reason)
 	}
 	return nil
+}
+
+func initCmd(argv []string, stdout io.Writer) error {
+	fs := flag.NewFlagSet("init", flag.ContinueOnError)
+	repoDir := fs.String("repo-dir", ".", "path to the target repo checkout")
+	if _, err := parseInterleaved(fs, argv); err != nil {
+		return err
+	}
+
+	configPath := filepath.Join(*repoDir, ".github", "simplycubed.yml")
+	wroteConfig, err := writeStarterConfig(configPath)
+	if err != nil {
+		return err
+	}
+
+	labels := app.StateLabels(config.DefaultLabelPrefix)
+	created, err := (&forgegh.Forge{Dir: *repoDir}).EnsureLabels(context.Background(), labels)
+	if err != nil {
+		return err
+	}
+
+	if wroteConfig {
+		fmt.Fprintf(stdout, "wrote %s\n", configPath)
+	} else {
+		fmt.Fprintf(stdout, "left existing %s unchanged\n", configPath)
+	}
+	if len(created) == 0 {
+		fmt.Fprintln(stdout, "labels already present: no changes")
+	} else {
+		fmt.Fprintf(stdout, "created labels: %s\n", strings.Join(created, ", "))
+	}
+	fmt.Fprintln(stdout, "next steps:")
+	fmt.Fprintln(stdout, "  - write the real gate in .github/simplycubed.yml")
+	fmt.Fprintln(stdout, "  - verify that gate is green on your main branch")
+	fmt.Fprintln(stdout, "  - set AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY")
+	fmt.Fprintln(stdout, "  - file an issue and apply the sc:go label")
+	return nil
+}
+
+func writeStarterConfig(path string) (bool, error) {
+	if _, err := os.Stat(path); err == nil {
+		return false, nil
+	} else if !os.IsNotExist(err) {
+		return false, err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return false, err
+	}
+	if err := os.WriteFile(path, []byte(starterConfig), 0o644); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // fetchIssue fills the issue title and body from GitHub via gh.
