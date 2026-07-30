@@ -1,5 +1,11 @@
 # This repo runs the agent on itself, so it tracks main rather than a release
 # tag: a fix to the harness must be testable here before it ships to anyone.
+#
+# version is the triggering commit, not "main". The reusable workflow file is
+# read from main's tip by GitHub, but `go install ...@main` goes through
+# proxy.golang.org, which caches the branch-to-commit mapping and served a
+# commit predating the workflow it was being run by. A SHA is unambiguous, so
+# the workflow and the binary always come from the same commit.
 # Adopters do the opposite and pin a release, which is what docs/templates/
 # simplycubed-caller.yml gives them.
 name: simplycubed-caller
@@ -20,7 +26,7 @@ jobs:
       issue-number: ${{ github.event.issue.number }}
       actor-login: ${{ github.event.sender.login }}
       azure-openai-endpoint: ${{ vars.AZURE_OPENAI_ENDPOINT }}
-      version: main
+      version: ${{ github.sha }}
       # model: my-gpt-5-4-deployment
     secrets:
       azure-openai-api-key: ${{ secrets.AZURE_OPENAI_API_KEY }}
@@ -35,7 +41,7 @@ jobs:
       pr-number: ${{ github.event.pull_request.number }}
       actor-login: ${{ github.event.review.user.login }}
       azure-openai-endpoint: ${{ vars.AZURE_OPENAI_ENDPOINT }}
-      version: main
+      version: ${{ github.sha }}
       # model: my-gpt-5-4-deployment
     secrets:
       azure-openai-api-key: ${{ secrets.AZURE_OPENAI_API_KEY }}
