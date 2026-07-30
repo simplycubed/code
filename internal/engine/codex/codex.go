@@ -123,18 +123,27 @@ func (r *Runner) Run(ctx context.Context, req domain.RunRequest) (domain.RunResu
 }
 
 // childEnv builds the environment for the codex process. It drops any inherited
-// GOCACHE and CODEX_HOME, applies ExtraEnv, sets CODEX_HOME, and (unless ExtraEnv
-// already sets GOCACHE) points GOCACHE at a workspace-local directory so a Go
-// toolchain can write its build cache inside the sandbox. Without this the agent
-// hits a read-only cache and is tempted to edit the gate to get past it, which
-// is exactly what the S3-B spike observed.
+// GOCACHE, GOPATH, and CODEX_HOME, applies ExtraEnv, sets CODEX_HOME, and (unless
+// ExtraEnv already sets them) points GOCACHE and GOPATH at workspace-local
+// directories so a Go toolchain can write its build cache and module cache inside
+// the sandbox. Without this the agent hits a read-only cache and is tempted to
+// work around the environment instead of fixing the bug: the S3-B spike saw it
+// edit the gate over GOCACHE, and a live run saw it invent its own GOPATH inside
+// the worktree, which then leaked into the commit. Both paths are on the VCS
+// scratch-exclusion list, so pre-configuring them here keeps the sandbox working
+// AND keeps the caches at known paths a commit can never pick up.
 func (r *Runner) childEnv(workDir string) []string {
-	env := filterEnvKeys(os.Environ(), "GOCACHE", "CODEX_HOME")
+	env := filterEnvKeys(os.Environ(), "GOCACHE", "GOPATH", "CODEX_HOME")
 	env = append(env, r.ExtraEnv...)
 	if !hasEnvKey(r.ExtraEnv, "GOCACHE") {
 		gc := filepath.Join(workDir, ".gocache")
 		_ = os.MkdirAll(gc, 0o755)
 		env = append(env, "GOCACHE="+gc)
+	}
+	if !hasEnvKey(r.ExtraEnv, "GOPATH") {
+		gp := filepath.Join(workDir, ".gopath")
+		_ = os.MkdirAll(gp, 0o755)
+		env = append(env, "GOPATH="+gp)
 	}
 	env = append(env, "CODEX_HOME="+r.CodexHome)
 	return env

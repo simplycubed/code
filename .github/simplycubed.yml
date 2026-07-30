@@ -1,0 +1,8 @@
+# SimplyCubed Code configuration — this repo runs on itself.
+#
+# The gate is `make check`, the same single command CI runs: gofmt, go vet,
+# build, and the full test suite. Fast, hermetic, and the one command that
+# decides whether a change is good.
+labelPrefix: sc
+
+gate: make check
