@@ -122,6 +122,7 @@ gate:
 const (
 	latestKnownWorkflowTag = "v0.1.5"
 	callerWorkflowTagToken = "__SIMPLYCUBED_TAG__"
+	simplycubedAppLogin    = "simplycubed-code[bot]"
 )
 
 //go:embed simplycubed-caller.yml.tmpl
@@ -288,9 +289,10 @@ func prepare(name string, argv []string) (*commonFlags, []string, error) {
 		Runner: newRunner(codexHome),
 		// Self, when set, filters the agent's own review feedback out of the fix
 		// loop. Empty for local runs, where the operator is a human, not the bot.
-		Forge:     forge,
-		VCS:       newVCS(forge.Self),
-		Worktrees: &worktree.Manager{RepoDir: *repoDir, BaseDir: filepath.Join(*stateDir, "worktrees")},
+		Forge:                  forge,
+		VCS:                    newVCS(forge.Self),
+		Worktrees:              &worktree.Manager{RepoDir: *repoDir, BaseDir: filepath.Join(*stateDir, "worktrees")},
+		WorkflowRestrictedPush: forge.Self == simplycubedAppLogin,
 	}
 	return &commonFlags{repoDir: *repoDir, base: *base, actor: *actor, cfg: cfg, deps: deps}, rest, nil
 }

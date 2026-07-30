@@ -108,6 +108,16 @@ func (g *Git) Push(ctx context.Context, dir, branch string) error {
 	return err
 }
 
+// TouchesWorkflow reports whether the working tree has tracked or untracked
+// changes under `.github/workflows/`.
+func (g *Git) TouchesWorkflow(ctx context.Context, dir string) (bool, error) {
+	out, err := g.run(ctx, dir, "status", "--porcelain", "--", ".github/workflows")
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(out) != "", nil
+}
+
 // Sync hard-resets dir to the remote tip of branch. It fetches the branch and
 // resets the working tree to FETCH_HEAD, then removes untracked files. This is
 // used before the fixer runs so it edits the pull request's actual pushed state,

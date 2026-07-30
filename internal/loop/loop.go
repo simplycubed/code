@@ -45,6 +45,10 @@ type Config struct {
 	LabelPrefix string // default "sc"
 	MaxRounds   int    // hard cap on act/grade rounds; default 4
 	RunID       string // used in ledger events
+	// WorkflowRestrictedPush marks runs authenticated as the SimplyCubed GitHub
+	// App, whose installation token deliberately lacks `workflows` permission.
+	// When such a run edits `.github/workflows/`, GitHub refuses the push.
+	WorkflowRestrictedPush bool
 	// Attribute stamps generated commits and pull requests with a SimplyCubed
 	// Code marker. The app wires this from the repo config (on by default).
 	Attribute bool
@@ -64,6 +68,14 @@ type VCS interface {
 	// that a prior run may have left behind.
 	Sync(ctx context.Context, dir, branch string) error
 }
+
+type workflowToucher interface {
+	// TouchesWorkflow reports whether the working tree has changes under
+	// `.github/workflows/`.
+	TouchesWorkflow(ctx context.Context, dir string) (bool, error)
+}
+
+const workflowPushRefusal = "refusing to allow a GitHub App to create or update workflow"
 
 // Engine runs one issue to a terminal outcome.
 type Engine struct {
@@ -114,6 +126,38 @@ func (e *Engine) promptFor(role domain.Role, iss domain.Issue) string {
 		return e.Prompt(role, iss)
 	}
 	return iss.Body
+}
+
+func workflowPermissionReason() string {
+	return "the change touches `.github/workflows/`, but this run is authenticated as the `simplycubed-code[bot]` GitHub App, which deliberately lacks `workflows` permission. GitHub will refuse that push. Commit the workflow change as a human, or rerun the CLI under your own GitHub auth."
+}
+
+func workflowPushReason(err error) string {
+	if err == nil {
+		return ""
+	}
+	if strings.Contains(err.Error(), workflowPushRefusal) {
+		return workflowPermissionReason()
+	}
+	return ""
+}
+
+func (e *Engine) workflowPreflight(ctx context.Context) (string, error) {
+	if !e.Cfg.WorkflowRestrictedPush || e.VCS == nil {
+		return "", nil
+	}
+	vcs, ok := e.VCS.(workflowToucher)
+	if !ok {
+		return "", nil
+	}
+	touched, err := vcs.TouchesWorkflow(ctx, e.Cfg.WorkDir)
+	if err != nil {
+		return "", err
+	}
+	if !touched {
+		return "", nil
+	}
+	return workflowPermissionReason(), nil
 }
 
 // log records an event if a ledger is configured; otherwise it is a no-op.
@@ -167,6 +211,13 @@ func (e *Engine) Run(ctx context.Context, iss domain.Issue) (Result, error) {
 		// why. Without it an escalation reads as "nothing happened", which is
 		// exactly the case a human most needs explained.
 		e.lastSummary = res.Summary
+		reason, err := e.workflowPreflight(ctx)
+		if err != nil {
+			return e.escalate(ctx, iss, prefix, round, "workflow pre-flight failed: "+err.Error())
+		}
+		if reason != "" {
+			return e.escalate(ctx, iss, prefix, round, reason)
+		}
 
 		// Grade against the repo's own gate.
 		gr := e.Gate(ctx, e.Cfg.WorkDir)
@@ -232,6 +283,13 @@ func (e *Engine) Fix(ctx context.Context, req FixRequest) (Result, error) {
 			return e.fixEscalate(ctx, req, prefix, round, fmt.Sprintf("engine error: %v", err))
 		}
 		e.lastSummary = turn.Summary
+		reason, err := e.workflowPreflight(ctx)
+		if err != nil {
+			return e.fixEscalate(ctx, req, prefix, round, "workflow pre-flight failed: "+err.Error())
+		}
+		if reason != "" {
+			return e.fixEscalate(ctx, req, prefix, round, reason)
+		}
 
 		res := e.Gate(ctx, e.Cfg.WorkDir)
 		gateStr := "fail"
@@ -280,6 +338,9 @@ func (e *Engine) pushFix(ctx context.Context, req FixRequest, prefix string, rou
 			return e.fixEscalate(ctx, req, prefix, round, "gate passed but the fixer made no change to push")
 		}
 		if err := e.VCS.Push(ctx, e.Cfg.WorkDir, req.Branch); err != nil {
+			if reason := workflowPushReason(err); reason != "" {
+				return e.fixEscalate(ctx, req, prefix, round, reason)
+			}
 			return e.fixEscalate(ctx, req, prefix, round, "push failed: "+err.Error())
 		}
 	}
@@ -322,6 +383,9 @@ func (e *Engine) openPR(ctx context.Context, iss domain.Issue, prefix string, ro
 			return e.escalate(ctx, iss, prefix, round, "gate passed but the working tree has no changes to propose")
 		}
 		if err := e.VCS.Push(ctx, e.Cfg.WorkDir, e.Cfg.Branch); err != nil {
+			if reason := workflowPushReason(err); reason != "" {
+				return e.escalate(ctx, iss, prefix, round, reason)
+			}
 			return e.escalate(ctx, iss, prefix, round, "push failed: "+err.Error())
 		}
 	}

@@ -151,3 +151,44 @@ func TestCommitWithoutAnIdentityStillWorksWhenGitHasOne(t *testing.T) {
 		t.Fatalf("committed=%v err=%v", committed, err)
 	}
 }
+
+func TestTouchesWorkflowReportsOnlyWorkflowChanges(t *testing.T) {
+	work := repoWithBareRemote(t)
+	g := &Git{}
+	ctx := context.Background()
+
+	touched, err := g.TouchesWorkflow(ctx, work)
+	if err != nil || touched {
+		t.Fatalf("clean repo should report no workflow changes: touched=%v err=%v", touched, err)
+	}
+
+	if err := os.MkdirAll(filepath.Join(work, ".github", "workflows"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(work, ".github", "workflows", "check.yml"), []byte("name: check\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	touched, err = g.TouchesWorkflow(ctx, work)
+	if err != nil || !touched {
+		t.Fatalf("workflow edit should be reported: touched=%v err=%v", touched, err)
+	}
+
+	if _, err := g.Commit(ctx, work, "add workflow"); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+	touched, err = g.TouchesWorkflow(ctx, work)
+	if err != nil || touched {
+		t.Fatalf("committed workflow should leave a clean tree: touched=%v err=%v", touched, err)
+	}
+
+	if err := os.WriteFile(filepath.Join(work, "plain.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	touched, err = g.TouchesWorkflow(ctx, work)
+	if err != nil {
+		t.Fatalf("TouchesWorkflow: %v", err)
+	}
+	if touched {
+		t.Fatal("non-workflow edits must not trip workflow detection")
+	}
+}

@@ -79,6 +79,7 @@ To run the loop inside your own GitHub Actions:
 1. Create and install the GitHub App, `simplycubed-code`.
    Repository permissions: `Contents`, `Pull requests`, and `Issues` only.
    Do not grant `Workflows`, `Administration`, `Environments`, or `Secrets`.
+   That means the App cannot push changes under `.github/workflows/`: if a run needs to edit a workflow file, make that commit as a human or run the CLI locally under your own `gh` auth instead of the App token.
    Disable the App webhook: the App is an identity that mints per-job tokens, and there is no SimplyCubed server to receive deliveries.
    Set install visibility to `Any account`.
    Install it on the repo.
@@ -95,6 +96,8 @@ repository and asks only for `contents`, `pull requests`, and `issues`. The
 workflow then probes an Actions-administration endpoint and expects a denial, so
 the run log shows the token does not carry the workflow/admin scope the App was
 deliberately denied.
+If a change touches `.github/workflows/`, that token cannot deliver it; use a
+human commit or a local CLI run under your own GitHub auth for those edits.
 
 ## Configuration
 
