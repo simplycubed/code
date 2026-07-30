@@ -138,7 +138,11 @@ jobs:
       - name: Run SimplyCubed
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: simplycubed run "${GITHUB_REPOSITORY}#${{ inputs['issue-number'] }}" --model "${{ inputs.model }}" --repo-dir .
+        # --base is explicit because actions/checkout never creates origin/HEAD,
+        # which is the CLI's default base. The CLI resolves that case on its own
+        # now, but naming the branch the event came from is exact rather than
+        # inferred.
+        run: simplycubed run "${GITHUB_REPOSITORY}#${{ inputs['issue-number'] }}" --model "${{ inputs.model }}" --base "origin/${{ github.event.repository.default_branch }}" --repo-dir .
 
   address:
     if: ${{ inputs['pr-number'] != '' }}
