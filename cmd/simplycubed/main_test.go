@@ -2,7 +2,10 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"flag"
+	"github.com/simplycubed/code/internal/forge/dryrun"
+	forgefake "github.com/simplycubed/code/internal/forge/fake"
 	"io"
 	"os"
 	"path/filepath"
@@ -619,6 +622,54 @@ func TestCommandCmdRoutesByCommentBody(t *testing.T) {
 		}
 		if !strings.Contains(out.String(), "nothing to do") {
 			t.Fatalf("output = %q", out.String())
+		}
+	})
+}
+
+func TestReportDryRun(t *testing.T) {
+	// A run that is not a dry run must say nothing at all about dry runs.
+	t.Run("silent when not a dry run", func(t *testing.T) {
+		var out bytes.Buffer
+		reportDryRun(&commonFlags{}, &out)
+		reportDryRun(nil, &out)
+		if out.Len() != 0 {
+			t.Fatalf("expected no output, got %q", out.String())
+		}
+	})
+
+	// The report is the entire product of a dry run, and in Actions it has to
+	// reach the run summary or nobody reads it.
+	t.Run("prints the skipped writes and appends to the Actions summary", func(t *testing.T) {
+		d := dryrun.New(&forgefake.Forge{})
+		if _, err := d.OpenPR(context.Background(), "o/r", "sc/9", "Closes #9: t", "body"); err != nil {
+			t.Fatal(err)
+		}
+		summary := filepath.Join(t.TempDir(), "summary.md")
+		t.Setenv("GITHUB_STEP_SUMMARY", summary)
+
+		var out bytes.Buffer
+		reportDryRun(&commonFlags{dry: d}, &out)
+
+		if !strings.Contains(out.String(), "open-pr") || !strings.Contains(out.String(), "Closes #9") {
+			t.Fatalf("stdout missing the skipped write: %q", out.String())
+		}
+		b, err := os.ReadFile(summary)
+		if err != nil {
+			t.Fatalf("summary not written: %v", err)
+		}
+		if !strings.Contains(string(b), "SimplyCubed Code dry run") || !strings.Contains(string(b), "open-pr") {
+			t.Fatalf("summary missing the report:\n%s", b)
+		}
+	})
+
+	// A missing summary file must not break the run; it is an Actions nicety.
+	t.Run("survives an unwritable summary path", func(t *testing.T) {
+		d := dryrun.New(&forgefake.Forge{})
+		t.Setenv("GITHUB_STEP_SUMMARY", filepath.Join(t.TempDir(), "nope", "x.md"))
+		var out bytes.Buffer
+		reportDryRun(&commonFlags{dry: d}, &out)
+		if out.Len() == 0 {
+			t.Fatal("stdout should still get the report")
 		}
 	})
 }

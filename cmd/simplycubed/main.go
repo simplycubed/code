@@ -351,13 +351,13 @@ func prepare(name string, argv []string) (*commonFlags, []string, error) {
 // reportDryRun prints the writes a dry run skipped, and appends them to the
 // GitHub Actions run summary when there is one, so the result is readable on
 // the run page rather than buried in step logs.
-func reportDryRun(c *commonFlags) {
+func reportDryRun(c *commonFlags, w io.Writer) {
 	if c == nil || c.dry == nil {
 		return
 	}
 	report := c.dry.Report()
-	fmt.Println()
-	fmt.Println(report)
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, report)
 	if path := os.Getenv("GITHUB_STEP_SUMMARY"); path != "" {
 		f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 		if err != nil {
@@ -392,7 +392,7 @@ func runCmd(argv []string) error {
 	}
 	fmt.Printf("running %s#%d against gate %q ...\n", iss.Repo, iss.Number, c.cfg.Gate)
 	res, err := app.Run(context.Background(), c.deps, c.cfg, iss, c.base)
-	defer reportDryRun(c)
+	defer reportDryRun(c, os.Stdout)
 	if err != nil {
 		return err
 	}
@@ -422,7 +422,7 @@ func addressCmd(argv []string) error {
 
 	fmt.Printf("addressing feedback on %s#%d against gate %q ...\n", ref.Repo, ref.Number, c.cfg.Gate)
 	res, err := app.AddressPR(context.Background(), c.deps, c.cfg, ref.Repo, ref.Number)
-	defer reportDryRun(c)
+	defer reportDryRun(c, os.Stdout)
 	if err != nil {
 		return err
 	}
