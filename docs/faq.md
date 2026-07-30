@@ -20,6 +20,9 @@ You can use SimplyCubed Code two ways:
 The GitHub App is configured with only `contents`, `pull requests`, and
 `issues`, and the reusable workflow proves that scope at runtime by expecting an
 Actions-administration API call to fail.
+That permission set also means the App cannot push edits under
+`.github/workflows/`. When a change needs a workflow-file edit, make that commit
+as a human or run the CLI locally under your own `gh` auth instead of the App.
 
 ## Are the `sc:` labels created for me?
 

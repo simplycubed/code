@@ -31,6 +31,9 @@ type Deps struct {
 	Forge     forge.Forge
 	VCS       loop.VCS
 	Worktrees *worktree.Manager
+	// WorkflowRestrictedPush marks runs authenticated as the SimplyCubed GitHub
+	// App, whose token deliberately lacks `workflows` permission.
+	WorkflowRestrictedPush bool
 }
 
 var issueRefRE = regexp.MustCompile(`^([^/\s]+/[^/#\s]+)#(\d+)$`)
@@ -177,7 +180,13 @@ func AddressPR(ctx context.Context, d Deps, cfg *config.Config, repo string, pr 
 		Gate:   func(ctx context.Context, dir string) gate.Result { return gate.Run(ctx, dir, cfg.Gate) },
 		Forge:  d.Forge,
 		VCS:    d.VCS,
-		Cfg:    loop.Config{WorkDir: wt, Branch: fb.Branch, LabelPrefix: prefix, Attribute: cfg.Attribution},
+		Cfg: loop.Config{
+			WorkDir:                wt,
+			Branch:                 fb.Branch,
+			LabelPrefix:            prefix,
+			WorkflowRestrictedPush: d.WorkflowRestrictedPush,
+			Attribute:              cfg.Attribution,
+		},
 	}
 	return eng.Fix(ctx, loop.FixRequest{
 		Repo:   repo,
@@ -233,7 +242,13 @@ func Run(ctx context.Context, d Deps, cfg *config.Config, iss domain.Issue, base
 		Forge:  d.Forge,
 		VCS:    d.VCS,
 		Prompt: promptBuilder(cfg.Gate),
-		Cfg:    loop.Config{WorkDir: wt, Branch: branch, LabelPrefix: prefix, Attribute: cfg.Attribution},
+		Cfg: loop.Config{
+			WorkDir:                wt,
+			Branch:                 branch,
+			LabelPrefix:            prefix,
+			WorkflowRestrictedPush: d.WorkflowRestrictedPush,
+			Attribute:              cfg.Attribution,
+		},
 	}
 	if cfg.PRDescription == "rich" {
 		eng.Describe = describeHook(d.Runner, wt)
