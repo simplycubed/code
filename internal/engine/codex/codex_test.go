@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/simplycubed/code/internal/domain"
@@ -76,6 +77,39 @@ func TestRunSurfacesCodexFailure(t *testing.T) {
 	}
 	if res.Err == nil {
 		t.Fatal("RunResult.Err should carry the failure")
+	}
+}
+
+// The adapter must point GOCACHE at a workspace-local path so a Go toolchain can
+// write its cache inside the sandbox (the S3-B lesson). This stub writes the
+// GOCACHE it saw into the final-message file so the test can inspect it.
+const fakeEchoGocache = `#!/bin/sh
+out=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -o) out="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+[ -n "$out" ] && printf '%s' "$GOCACHE" > "$out"
+exit 0
+`
+
+func TestRunSetsWorkspaceLocalGocache(t *testing.T) {
+	bin := writeFakeCodex(t, fakeEchoGocache)
+	work := t.TempDir()
+	r := New(t.TempDir())
+	r.Bin = bin
+	res, err := r.Run(context.Background(), domain.RunRequest{
+		Role:    domain.RoleImplementer,
+		WorkDir: work,
+		Prompt:  "x",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.HasPrefix(res.Summary, work) || !strings.HasSuffix(res.Summary, ".gocache") {
+		t.Fatalf("GOCACHE = %q, want a .gocache dir under the workdir %q", res.Summary, work)
 	}
 }
 
