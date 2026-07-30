@@ -5,7 +5,13 @@
 # proxy.golang.org records it immutably, so each mistake cost a version.
 #
 # This creates the tag server-side from the remote's own tip, so a stale local
-# clone cannot participate. Pushing the tag triggers release.yml as before.
+# clone cannot participate.
+#
+# The tag is pushed with a GitHub App installation token, not github.token. A
+# GITHUB_TOKEN-authored push does not trigger downstream workflows, so pushing
+# the tag with it created the tag and then silently published nothing: release.yml
+# never fired. That is the same recursive-workflow rule the README warns adopters
+# about, and it cost v0.1.6 its release until the tag was re-pushed by hand.
 name: tag-release
 
 on:
@@ -23,11 +29,22 @@ jobs:
   tag:
     runs-on: ubuntu-latest
     steps:
+      - name: Mint GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.SIMPLYCUBED_GH_APP_ID }}
+          private-key: ${{ secrets.SIMPLYCUBED_GH_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+
       - name: Check out the remote tip of the default branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -45,10 +62,30 @@ jobs:
       - name: Create and push the tag
         env:
           VERSION: ${{ inputs.version }}
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "simplycubed-code[bot]"
+          git config user.email "simplycubed-code@users.noreply.github.com"
           git tag -a "${VERSION}" -m "${VERSION}"
           git push origin "${VERSION}"
           echo "tagged ${VERSION} at $(git rev-parse HEAD)"
+
+      # The tag push is supposed to trigger release.yml, which publishes the
+      # notes. When that silently did not happen, this job still went green and
+      # the only symptom was a missing release nobody was looking for. Confirm
+      # it, so a broken release path fails the job that caused it.
+      - name: Confirm the release published
+        env:
+          VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          for i in $(seq 1 30); do
+            if gh release view "${VERSION}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+              echo "release ${VERSION} published"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "tag ${VERSION} exists but no release was published after 5 minutes." >&2
+          echo "release.yml did not run. Check that the tag was pushed with a token that triggers workflows." >&2
+          exit 1
