@@ -3,7 +3,10 @@
 All notable changes are recorded here and summarized again in the matching
 GitHub release notes for each tag.
 
-## v0.1.4
+## v0.1.5
+
+Supersedes v0.1.4, which was tagged from the wrong commit and is retracted in
+`go.mod`. The content below is what v0.1.4 was meant to carry.
 
 - Fixed the blocker that made every GitHub Actions run fail before doing any
   work: the CLI defaulted `--base` to `origin/HEAD`, which `actions/checkout`
