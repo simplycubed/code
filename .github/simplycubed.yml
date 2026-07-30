@@ -6,3 +6,5 @@
 labelPrefix: sc
 
 gate: make check
+
+prDescription: rich
