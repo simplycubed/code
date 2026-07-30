@@ -32,7 +32,7 @@ progress. The loop already has the mechanisms. The numbers are the open question
 
 ## Consequences
 
-Free model credits are a rate limit before they are a cost. S3 must record tokens
+Provider rate limits constrain before per-token cost does. S3 must record tokens
 and wall-clock per issue so the budget can be set from data, and so multi-repo
 fan-out can be checked against the real rate limit rather than assumed to fit.
 

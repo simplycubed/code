@@ -32,8 +32,8 @@ evidence exists would bake in assumptions the spike is designed to check.
 
 - The `Runner` interface already exists and is exercised by the fake, so adding
   this adapter is additive and low-risk once S3 reports.
-- The engine is a config choice, not an architectural commitment. When the Azure
-  credit runs out, changing the default is an adapter swap.
+- The engine is a config choice, not an architectural commitment. If the model or
+  provider needs to change, changing the default is an adapter swap.
 
 ## Validated by S3-B (2026-07-30)
 
