@@ -75,3 +75,66 @@ func TestAddListRemove(t *testing.T) {
 		t.Fatalf("worktree dir still present after Remove")
 	}
 }
+
+// cloneOf makes a clone of src and, when stripHead is true, deletes the
+// origin/HEAD symbolic ref. That reproduces a GitHub Actions checkout, which
+// never creates it: the "origin/HEAD" default base is then an invalid
+// reference and every run failed at worktree creation (issue #57).
+func cloneOf(t *testing.T, src string, stripHead bool) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "clone")
+	run := func(wd string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = wd
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %s: %v: %s", strings.Join(args, " "), err, out)
+		}
+	}
+	run("", "clone", "-q", src, dir)
+	if stripHead {
+		cmd := exec.Command("git", "symbolic-ref", "--delete", "refs/remotes/origin/HEAD")
+		cmd.Dir = dir
+		_ = cmd.Run() // absent already is fine; that is the state we want
+	}
+	return dir
+}
+
+func TestAddResolvesBaseWhenOriginHeadIsMissing(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	repo := cloneOf(t, initRepo(t), true)
+	m := &Manager{RepoDir: repo, BaseDir: t.TempDir()}
+	ctx := context.Background()
+
+	// The literal ref must really be gone, or this test proves nothing.
+	if m.refExists(ctx, "origin/HEAD") {
+		t.Fatal("origin/HEAD should be absent for this test to be meaningful")
+	}
+
+	path, err := m.Add(ctx, "sc/57", "origin/HEAD")
+	if err != nil {
+		t.Fatalf("Add with a missing origin/HEAD must resolve a base, got: %v", err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("worktree path not created: %v", err)
+	}
+}
+
+func TestResolveBaseKeepsAnExistingRefAndReportsAMissingOne(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not available")
+	}
+	m := &Manager{RepoDir: initRepo(t), BaseDir: t.TempDir()}
+	ctx := context.Background()
+
+	got, err := m.ResolveBase(ctx, "HEAD")
+	if err != nil || got != "HEAD" {
+		t.Fatalf("an existing ref must be returned unchanged: got %q err %v", got, err)
+	}
+	// A named base that does not exist is a real error, not something to guess at.
+	if _, err := m.ResolveBase(ctx, "origin/nope"); err == nil {
+		t.Fatal("a missing named base must error rather than fall back")
+	}
+}
