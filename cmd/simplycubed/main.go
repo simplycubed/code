@@ -87,6 +87,26 @@ type commonFlags struct {
 	deps    app.Deps
 }
 
+// parseInterleaved parses argv with fs, allowing flags before or after
+// positional arguments. Stdlib flag parsing stops at the first positional, so
+// `run owner/repo#1 --repo-dir /x` would silently ignore the flag while the
+// usage text advertises exactly that form. Positionals are collected in order
+// and parsing resumes after each one, so both orders (and a mix) are honored.
+func parseInterleaved(fs *flag.FlagSet, argv []string) ([]string, error) {
+	var positionals []string
+	for {
+		if err := fs.Parse(argv); err != nil {
+			return nil, err
+		}
+		argv = fs.Args()
+		if len(argv) == 0 {
+			return positionals, nil
+		}
+		positionals = append(positionals, argv[0])
+		argv = argv[1:]
+	}
+}
+
 // prepare parses the shared flags, loads the repo config, validates the engine
 // environment, writes the codex config, and builds the dependency graph. It
 // returns the remaining positional arguments so each command can parse its own
@@ -97,7 +117,8 @@ func prepare(name string, argv []string) (*commonFlags, []string, error) {
 	model := fs.String("model", "gpt-5.4", "engine model/deployment name")
 	base := fs.String("base", "origin/HEAD", "worktree base ref")
 	stateDir := fs.String("state-dir", filepath.Join(os.TempDir(), "simplycubed"), "state directory")
-	if err := fs.Parse(argv); err != nil {
+	rest, err := parseInterleaved(fs, argv)
+	if err != nil {
 		return nil, nil, err
 	}
 
@@ -136,7 +157,7 @@ func prepare(name string, argv []string) (*commonFlags, []string, error) {
 		VCS:       &vcsgit.Git{},
 		Worktrees: &worktree.Manager{RepoDir: *repoDir, BaseDir: filepath.Join(*stateDir, "worktrees")},
 	}
-	return &commonFlags{repoDir: *repoDir, base: *base, cfg: cfg, deps: deps}, fs.Args(), nil
+	return &commonFlags{repoDir: *repoDir, base: *base, cfg: cfg, deps: deps}, rest, nil
 }
 
 func runCmd(argv []string) error {
