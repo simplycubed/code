@@ -9,7 +9,7 @@ on:
 jobs:
   run:
     if: ${{ github.event_name == 'issues' && github.event.label.name == 'sc:go' }}
-    uses: simplycubed/code/.github/workflows/simplycubed.yml@v0.1.0
+    uses: simplycubed/code/.github/workflows/simplycubed.yml@v0.1.1
     with:
       ref: ${{ github.event.issue.number }}
       issue-number: ${{ github.event.issue.number }}
@@ -22,7 +22,7 @@ jobs:
 
   address:
     if: ${{ github.event_name == 'pull_request_review' }}
-    uses: simplycubed/code/.github/workflows/simplycubed.yml@v0.1.0
+    uses: simplycubed/code/.github/workflows/simplycubed.yml@v0.1.1
     with:
       ref: ${{ github.event.pull_request.number }}
       pr-number: ${{ github.event.pull_request.number }}
