@@ -1,0 +1,121 @@
+# SimplyCubed Code — installation self-test.
+#
+# Dispatch this once after installing, to find out whether THIS repository's
+# runners can actually do what the agent needs. It answers questions that only a
+# real runner can answer, and that a local run cannot: whether the engine's
+# sandbox starts here, whether a commit has an identity, and whether the App
+# token is scoped the way it claims to be.
+#
+# It is a diagnostic. It never edits code, never commits, and never opens a pull
+# request.
+#
+# DELETE OR DISABLE THIS FILE once the install is validated. Normal operation
+# goes through the GitHub App and the sc:go label, which is the path every
+# adopter uses. This file exists so a bad install fails in one minute here
+# instead of silently during a real run.
+name: simplycubed-selftest
+
+on:
+  workflow_dispatch:
+    inputs:
+      engine:
+        description: Engine to test (codex or claude). Leave blank to skip the engine check.
+        default: codex
+        required: false
+        type: string
+
+permissions: {}
+
+jobs:
+  selftest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mint the App token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.SIMPLYCUBED_GH_APP_ID }}
+          private-key: ${{ secrets.SIMPLYCUBED_GH_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+          permission-issues: write
+          permission-pull-requests: write
+
+      - name: Check the token identity and scope
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          login="$(gh api graphql -f query='query { viewer { login } }' --jq '.data.viewer.login')"
+          echo "identity: ${login}"
+          case "${login}" in
+            *"[bot]") ;;
+            *) echo "FAIL: the token resolves to '${login}', which is not a bot. Check the App credentials." >&2; exit 1 ;;
+          esac
+          gh api "repos/${GITHUB_REPOSITORY}" >/dev/null || { echo "FAIL: cannot read the repository." >&2; exit 1; }
+          gh api "repos/${GITHUB_REPOSITORY}/issues?per_page=1" >/dev/null || { echo "FAIL: cannot read issues." >&2; exit 1; }
+          if gh api "repos/${GITHUB_REPOSITORY}/actions/permissions" >/dev/null 2>&1; then
+            echo "FAIL: the token can reach Actions administration. The App is over-permissioned." >&2
+            exit 1
+          fi
+          echo "PASS: token is a bot, can read what it needs, and is denied Actions administration"
+
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Check the repository config
+        run: |
+          test -f .github/simplycubed.yml || { echo "FAIL: .github/simplycubed.yml is missing. Run 'simplycubed init'." >&2; exit 1; }
+          if ! grep -qE '^gate:[[:space:]]*[^[:space:]]' .github/simplycubed.yml; then
+            echo "FAIL: no gate command is set. A repository with no gate is refused on purpose." >&2
+            exit 1
+          fi
+          echo "PASS: config present with a gate command"
+
+      - name: Check that a commit can be made
+        run: |
+          # A runner has no git identity. A commit that fails here would fail in a
+          # real run only AFTER the gate had already passed, wasting the whole run.
+          git -c user.name=selftest -c user.email=selftest@example.invalid \
+            commit --allow-empty -m "selftest: verify a commit is possible" >/dev/null \
+            || { echo "FAIL: cannot create a commit on this runner." >&2; exit 1; }
+          git reset --hard HEAD~1 >/dev/null
+          echo "PASS: commits work when an identity is supplied"
+
+      - name: Check the engine can run here
+        if: ${{ inputs.engine != '' }}
+        env:
+          ENGINE: ${{ inputs.engine }}
+          AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT }}
+          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+        run: |
+          # This is the check that matters most, and the one no local run can make
+          # for you: the engine's sandbox uses kernel features a runner may not
+          # grant. When it cannot start, the agent silently does nothing and the
+          # run still reports success.
+          if [ "${ENGINE}" = "codex" ]; then
+            [ -n "${AZURE_OPENAI_ENDPOINT}" ] || { echo "FAIL: AZURE_OPENAI_ENDPOINT is not set (repository VARIABLE)." >&2; exit 1; }
+            [ -n "${AZURE_OPENAI_API_KEY}" ] || { echo "FAIL: AZURE_OPENAI_API_KEY is not set (repository SECRET)." >&2; exit 1; }
+            npm install -g @openai/codex@0.146.0 >/dev/null 2>&1
+            out="$(codex exec --skip-git-repo-check -s workspace-write -C . 'Run: echo SELFTEST_OK' 2>&1 || true)"
+            if printf '%s' "${out}" | grep -q "bwrap"; then
+              echo "FAIL: the engine sandbox cannot start on this runner." >&2
+              printf '%s\n' "${out}" | grep -m1 bwrap >&2
+              echo "The agent would run here without being able to execute anything, and report success having done nothing." >&2
+              echo "Do not widen the sandbox to work around this. See docs/faq.md." >&2
+              exit 1
+            fi
+            echo "PASS: the engine sandbox starts on this runner"
+          else
+            echo "SKIP: engine '${ENGINE}' has no runner-specific check yet"
+          fi
+
+      - name: Summary
+        if: ${{ always() }}
+        run: |
+          echo "Self-test finished. A failure above names the thing to fix."
+          echo "Delete or disable this workflow once the install is validated;"
+          echo "normal operation goes through the App and the sc:go label."

@@ -243,9 +243,20 @@ exit 0
 		}
 	}
 
+	// The self-test is written alongside the caller, and the operator is told to
+	// remove it: it is an install check, not part of normal operation.
+	selftestPath := filepath.Join(repoDir, ".github", "workflows", "simplycubed-selftest.yml")
+	if _, err := os.Stat(selftestPath); err != nil {
+		t.Fatalf("self-test workflow not written: %v", err)
+	}
 	output := out.String()
 	if !strings.Contains(output, "wrote "+workflowPath) {
 		t.Fatalf("expected workflow write message:\n%s", output)
+	}
+	for _, want := range []string{"run the self-test once", "delete " + ".github/workflows/simplycubed-selftest.yml"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("next steps missing %q:\n%s", want, output)
+		}
 	}
 }
 
