@@ -23,6 +23,7 @@ import (
 
 	"github.com/simplycubed/code/internal/app"
 	"github.com/simplycubed/code/internal/buildinfo"
+	"github.com/simplycubed/code/internal/command"
 	"github.com/simplycubed/code/internal/config"
 	"github.com/simplycubed/code/internal/domain"
 	"github.com/simplycubed/code/internal/engine"
@@ -58,6 +59,10 @@ func dispatch(args []string, stdout, stderr io.Writer) int {
 		if err := initCmd(args[1:], stdout); err != nil {
 			return fail(err)
 		}
+	case "command":
+		if err := commandCmd(args[1:], stdout); err != nil {
+			return fail(err)
+		}
 	case "preflight":
 		if err := preflightCmd(args[1:], stdout); err != nil {
 			return fail(err)
@@ -84,6 +89,7 @@ usage:
   simplycubed version
   simplycubed init [--repo-dir .] [--workflow]
   simplycubed preflight [--repo-dir .]
+  simplycubed command <owner/repo#N> --body "<comment>" [flags]
   simplycubed run <owner/repo#N> [flags]
   simplycubed address <owner/repo#PR> [flags]
 
@@ -189,6 +195,30 @@ func newRunner(cfg *config.Config, codexHome string) engine.Runner {
 		r.Sandbox = mode
 	}
 	return r
+}
+
+// commandCmd routes a comment addressed to the agent to the matching loop. The
+// comment body is untrusted, so it is parsed into a fixed vocabulary here and
+// never interpreted: an unrecognised comment does nothing at all.
+func commandCmd(argv []string, stdout io.Writer) error {
+	fs := flag.NewFlagSet("command", flag.ContinueOnError)
+	body := fs.String("body", "", "the comment body that triggered this run")
+	rest, err := parseInterleaved(fs, argv)
+	if err != nil {
+		return err
+	}
+	switch command.Parse(*body) {
+	case command.Help:
+		fmt.Fprintln(stdout, command.HelpText)
+		return nil
+	case command.Go:
+		return runCmd(append([]string{}, rest...))
+	case command.Address:
+		return addressCmd(append([]string{}, rest...))
+	default:
+		fmt.Fprintln(stdout, "no command recognised in that comment; nothing to do")
+		return nil
+	}
 }
 
 // preflightCmd validates the repo config and engine settings, then exits. A
