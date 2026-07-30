@@ -32,6 +32,24 @@ progress. The loop already has the mechanisms. The numbers are the open question
 
 ## Consequences
 
-Free model credits are a rate limit before they are a cost. S3 must record tokens
+Provider rate limits constrain before per-token cost does. S3 must record tokens
 and wall-clock per issue so the budget can be set from data, and so multi-repo
 fan-out can be checked against the real rate limit rather than assumed to fit.
+
+## Measured (S3-B, 2026-07-30)
+
+First real numbers, from a single-file logic fix on a small Go repo graded by
+`make check`:
+
+- About 34k tokens and roughly two and a half minutes for one fix. Treat that as
+  a floor, not an average: it is a small repo and a one-line bug. Real issues
+  will cost more.
+- The model deployments used carry large per-minute token quotas (on the order of
+  500k and 1M tokens per minute). Rate limit is not the near-term constraint for
+  single-repo or small multi-repo use; per-issue cost is.
+- Those deployments were set to auto-upgrade to each new default model version.
+  That is a model-drift risk. Pin a specific version and canary a bump against
+  the golden-issue suite rather than inheriting silent upgrades.
+
+The stall and budget mechanisms already exist in code; these are the first data
+points toward setting the actual thresholds.

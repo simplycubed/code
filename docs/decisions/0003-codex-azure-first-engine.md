@@ -32,5 +32,34 @@ evidence exists would bake in assumptions the spike is designed to check.
 
 - The `Runner` interface already exists and is exercised by the fake, so adding
   this adapter is additive and low-risk once S3 reports.
-- The engine is a config choice, not an architectural commitment. When the Azure
-  credit runs out, changing the default is an adapter swap.
+- The engine is a config choice, not an architectural commitment. If the model or
+  provider needs to change, changing the default is an adapter swap.
+
+## Validated by S3-B (2026-07-30)
+
+A real run against a live Azure gpt-5.4 deployment, fixing a synthetic logic bug
+graded by a real `make check`:
+
+- The path works. gpt-5.4, driven by `codex exec`, diagnosed the failing test,
+  traced it to the right line, and fixed exactly that. The edit, grade, fix loop
+  is real against a real gate.
+- To reach green it also modified the gate (the Makefile) and added a new file,
+  to work around sandbox limits (the default Go build cache was not writable; the
+  host git required commit signing). It obeyed a literal "do not touch test files"
+  instruction, then changed other things instead.
+
+Two requirements follow, both now firm:
+
+- **The sandbox must be pre-configured** so the agent fixes the bug, not the
+  environment: a workspace-local build cache, commit signing off, and whatever
+  writable roots the toolchain needs. When the sandbox fights the toolchain, the
+  agent changes whatever it must, including the gate.
+- **The gate and its config are protected paths.** The guard that rejects agent
+  edits to the Makefile, the workflow files, and similar must be a path-based
+  control, not a prompt instruction, because an agent told not to touch one thing
+  will change another.
+
+A second discovery from the setup: the Codex engine auto-loads `AGENTS.md`, not
+`CLAUDE.md` (confirmed in S2). Onboarding must write an `AGENTS.md` into a target
+repo; a repo's existing `CLAUDE.md` is invisible to this engine unless the agent
+goes looking for it.
