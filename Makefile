@@ -19,8 +19,8 @@ vet: ## go vet across all packages.
 build: ## Build all packages.
 	go build ./...
 
-test: ## Run all tests.
-	go test ./...
+test: ## Run all tests and write a coverage profile for CI upload.
+	go test -race -coverprofile=coverage.txt -covermode=atomic ./...
 
 tidy: ## Tidy the module graph.
 	go mod tidy
