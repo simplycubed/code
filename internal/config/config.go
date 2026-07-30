@@ -50,7 +50,7 @@ func Load(path string) (*Config, error) {
 // Parse parses and validates config bytes.
 func Parse(b []byte) (*Config, error) {
 	c := &Config{LabelPrefix: DefaultLabelPrefix, Attribution: true}
-	for _, raw := range strings.Split(string(b), "\n") {
+	for raw := range strings.SplitSeq(string(b), "\n") {
 		line := strings.TrimSpace(raw)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue

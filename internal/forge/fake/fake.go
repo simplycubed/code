@@ -5,6 +5,7 @@ package fake
 
 import (
 	"context"
+	"slices"
 	"sync"
 
 	"github.com/simplycubed/code/internal/domain"
@@ -84,10 +85,5 @@ func (f *Forge) Feedback(_ context.Context, _ string, pr int) (domain.ReviewFeed
 func (f *Forge) SawState(label string) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	for _, s := range f.States {
-		if s == label {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(f.States, label)
 }
