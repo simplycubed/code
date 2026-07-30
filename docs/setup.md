@@ -38,6 +38,17 @@ labelPrefix: sc
 gate: make check
 ```
 
+### Run it locally first
+
+Before wiring Actions, you can prove the loop works from your terminal with the
+same config file:
+
+```sh
+export AZURE_OPENAI_ENDPOINT="https://<resource>.openai.azure.com"
+export AZURE_OPENAI_API_KEY="<key>"
+simplycubed run owner/repo#N --repo-dir .
+```
+
 4. In the GitHub repository settings, add:
 
 - Variable: `AZURE_OPENAI_ENDPOINT`
@@ -50,9 +61,9 @@ checks pending and block merge. If you set it, use a dedicated non-admin machine
 account token, not a human reviewer's token.
 
 5. Commit the generated config and workflow files in the target repository, open
-a setup pull request, and merge it yourself. The bot runtime can use the caller
-workflow after that, but it does not edit workflow files, secrets, or repo admin
-settings on its own.
+a setup pull request, and merge it yourself. Setup files are written locally by
+`simplycubed init` and merged by a human, because the runtime holds no
+`workflows` permission and cannot add its own workflow files.
 
 6. File an issue that describes a small change and apply the `sc:go` label.
 

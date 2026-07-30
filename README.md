@@ -47,6 +47,8 @@ What this buys you:
 - Your model provider keys, your `GITHUB_TOKEN`, and any other secrets stay in your GitHub secret store. They are read by your own Actions runs and never transit our infrastructure.
 - The agent holds no deploy credentials and has no path to production. The most it can do is open a pull request against a branch. A human and your branch protection rules decide what happens next.
 
+Setup files are written locally by `simplycubed init` and merged by a human, because the runtime holds no `workflows` permission and cannot add its own workflow files.
+
 The GitHub App identity is `simplycubed-code[bot]`. That bot is the single audit signal for everything the agent does.
 
 ## Getting started
@@ -78,7 +80,7 @@ To run the loop inside your own GitHub Actions:
 2. Fill in the real `gate:` in `.github/simplycubed.yml`.
 3. Add the repository variable `AZURE_OPENAI_ENDPOINT` and the repository secret `AZURE_OPENAI_API_KEY`.
 4. Optionally add a PAT as `SIMPLYCUBED_GH_TOKEN`. This is strongly recommended: pushes and pull requests authored with `GITHUB_TOKEN` do not trigger downstream workflows, so without a PAT the agent's PRs can miss their `check` runs and required checks block merge. If you set it, use a dedicated non-admin machine account's PAT, never a human reviewer's PAT, because the fix-on-request loop resolves the token identity and skips self-authored reviews. The reusable workflow falls back to `github.token` only when no PAT is set; issue #31 replaces this later with an App token.
-5. Open a setup pull request in the adopter repo and merge it yourself. The runtime can call the reusable workflow, but it does not edit workflow files, secrets, or other repo administration on its own.
+5. Open a setup pull request in the adopter repo and merge it yourself. Setup files are written locally by `simplycubed init` and merged by a human, because the runtime holds no `workflows` permission and cannot add its own workflow files.
 6. File an issue and apply `sc:go`. Reviews submitted on the resulting pull request call back into the same reusable workflow for the fix-on-request loop.
 
 ## Configuration
@@ -128,11 +130,11 @@ Roadmap, roughly in order:
 - The issue-to-pull-request loop. **Done.**
 - The fix-on-request loop: a human requests changes, a fixer role addresses them. **Done.**
 - Wiring the read-only reviewer role into the loop so a diff is reviewed before it reaches a human.
-- The self-onboarding flow via bootstrap issue and setup pull requests.
+- The self-onboarding flow via `init` and `init --workflow`. **Done.**
 - The Codex on Azure OpenAI engine adapter. **Done.**
 - The Claude Code engine adapter.
 
-If you are evaluating it now, read that as beta software rather than a polished product. The core loops work; the self-onboarding and reviewer wiring are still in progress.
+If you are evaluating it now, read that as beta software rather than a polished product. The core loops work; reviewer wiring is still in progress, and self-onboarding shipped as `init` and `init --workflow`.
 
 ## Contributing
 
