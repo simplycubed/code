@@ -39,15 +39,41 @@ type Config struct {
 	RunID       string // used in ledger events
 }
 
+// VCS commits and pushes the agent's changes so a pull request can be opened
+// against them. It is a seam so the loop stays testable without a real git repo.
+type VCS interface {
+	// Commit stages and commits the working-tree changes in dir. It reports
+	// whether there was anything to commit; an empty commit is not an error.
+	Commit(ctx context.Context, dir, message string) (committed bool, err error)
+	// Push pushes branch from dir to the remote.
+	Push(ctx context.Context, dir, branch string) error
+}
+
 // Engine runs one issue to a terminal outcome.
 type Engine struct {
 	Runner engine.Runner
 	Gate   GateFunc
 	Forge  forge.Forge
+	// VCS is optional. When set, the loop commits and pushes the changes before
+	// opening the pull request. When nil (as in unit tests), that step is skipped.
+	VCS VCS
+	// Prompt builds the prompt for a role turn. When nil, the loop falls back to
+	// the raw issue body. The app wires this to the roles package so the bounds
+	// (never edit the gate or tests to pass) travel with every turn.
+	Prompt func(role domain.Role, iss domain.Issue) string
 	// Ledger is optional. When set, the loop records a line per round and a
 	// terminal line per run.
 	Ledger *ledger.Writer
 	Cfg    Config
+}
+
+// promptFor returns the prompt for a role turn, using the configured builder or
+// falling back to the issue body.
+func (e *Engine) promptFor(role domain.Role, iss domain.Issue) string {
+	if e.Prompt != nil {
+		return e.Prompt(role, iss)
+	}
+	return iss.Body
 }
 
 // log records an event if a ledger is configured; otherwise it is a no-op.
@@ -86,13 +112,13 @@ func (e *Engine) Run(ctx context.Context, iss domain.Issue) (Result, error) {
 	lastSig := ""
 
 	for round := 1; round <= maxRounds; round++ {
-		// Act: one implementer turn. The prompt assembly (issue body, plan, gate
-		// output, repo map) is engine-dependent and specified in docs/decisions,
-		// not baked in here; this passes the issue body as a placeholder.
+		// Act: one implementer turn. The prompt comes from the configured builder
+		// (the roles package, wired by the app), which carries the bounds; it
+		// falls back to the issue body when no builder is set.
 		if _, err := e.Runner.Run(ctx, domain.RunRequest{
 			Role:    domain.RoleImplementer,
 			WorkDir: e.Cfg.WorkDir,
-			Prompt:  iss.Body,
+			Prompt:  e.promptFor(domain.RoleImplementer, iss),
 		}); err != nil {
 			return e.escalate(ctx, iss, prefix, round, fmt.Sprintf("engine error: %v", err))
 		}
@@ -125,6 +151,23 @@ func (e *Engine) Run(ctx context.Context, iss domain.Issue) (Result, error) {
 }
 
 func (e *Engine) openPR(ctx context.Context, iss domain.Issue, prefix string, round int) (Result, error) {
+	// Persist the agent's changes before opening the PR. Without this the PR
+	// would have no content. Skipped when no VCS is wired (unit tests).
+	if e.VCS != nil {
+		committed, err := e.VCS.Commit(ctx, e.Cfg.WorkDir,
+			fmt.Sprintf("Closes #%d: %s", iss.Number, iss.Title))
+		if err != nil {
+			return e.escalate(ctx, iss, prefix, round, "commit failed: "+err.Error())
+		}
+		if !committed {
+			// The gate passed but nothing changed: there is nothing to propose.
+			return e.escalate(ctx, iss, prefix, round, "gate passed but the working tree has no changes to propose")
+		}
+		if err := e.VCS.Push(ctx, e.Cfg.WorkDir, e.Cfg.Branch); err != nil {
+			return e.escalate(ctx, iss, prefix, round, "push failed: "+err.Error())
+		}
+	}
+
 	url, err := e.Forge.OpenPR(ctx, iss.Repo, e.Cfg.Branch,
 		fmt.Sprintf("Closes #%d: %s", iss.Number, iss.Title),
 		"Automated change from an issue. A human reviews and merges; this loop does not.")
