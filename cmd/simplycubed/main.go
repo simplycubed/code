@@ -29,6 +29,8 @@ import (
 	"github.com/simplycubed/code/internal/engine"
 	"github.com/simplycubed/code/internal/engine/claude"
 	"github.com/simplycubed/code/internal/engine/codex"
+	forge2 "github.com/simplycubed/code/internal/forge"
+	"github.com/simplycubed/code/internal/forge/dryrun"
 	forgegh "github.com/simplycubed/code/internal/forge/gh"
 	"github.com/simplycubed/code/internal/loop"
 	vcsgit "github.com/simplycubed/code/internal/vcs/git"
@@ -100,6 +102,7 @@ fix back to the same branch, or reports that there is nothing new to address.
 flags (both commands):
   --repo-dir    path to the target repo checkout (default ".")
   --actor       login that triggered the run; refused unless it has write access
+  --dry-run     run the whole loop but make no GitHub writes and no push
   --model       engine model/deployment name (default "gpt-5.4")
   --base        worktree base ref (default "origin/HEAD")
   --state-dir   where worktrees and the generated config live
@@ -249,8 +252,10 @@ type commonFlags struct {
 	repoDir string
 	base    string
 	actor   string
-	cfg     *config.Config
-	deps    app.Deps
+	// dry is set only on a dry run, and holds the writes that were skipped.
+	dry  *dryrun.Forge
+	cfg  *config.Config
+	deps app.Deps
 }
 
 // parseInterleaved parses argv with fs, allowing flags before or after
@@ -284,6 +289,7 @@ func prepare(name string, argv []string) (*commonFlags, []string, error) {
 	base := fs.String("base", "origin/HEAD", "worktree base ref")
 	stateDir := fs.String("state-dir", filepath.Join(os.TempDir(), "simplycubed"), "state directory")
 	actor := fs.String("actor", "", "login that triggered this run; checked for write access")
+	dryRun := fs.Bool("dry-run", false, "run the whole loop but make no GitHub writes and no push")
 	rest, err := parseInterleaved(fs, argv)
 	if err != nil {
 		return nil, nil, err
@@ -314,6 +320,7 @@ func prepare(name string, argv []string) (*commonFlags, []string, error) {
 	}
 
 	forge := &forgegh.Forge{StateLabels: app.StateLabels(prefix), Self: os.Getenv("SIMPLYCUBED_SELF_LOGIN")}
+	dry := *dryRun || os.Getenv("SIMPLYCUBED_DRY_RUN") != ""
 	// When the caller did not name the identity, ask the credential who it is.
 	// The workflow used to do this with a gh graphql call and hand the answer
 	// back in an environment variable; the product can just look.
@@ -323,16 +330,45 @@ func prepare(name string, argv []string) (*commonFlags, []string, error) {
 		}
 	}
 
+	vcs := newVCS(forge.Self)
+	vcs.DryRun = dry
+	var forgeForLoop forge2.Forge = forge
+	var dryForge *dryrun.Forge
+	if dry {
+		dryForge = dryrun.New(forge)
+		forgeForLoop = dryForge
+	}
+
 	deps := app.Deps{
 		Runner: newRunner(cfg, codexHome),
 		// Self, when set, filters the agent's own review feedback out of the fix
 		// loop. Empty for local runs, where the operator is a human, not the bot.
-		Forge:                  forge,
-		VCS:                    newVCS(forge.Self),
+		Forge:                  forgeForLoop,
+		VCS:                    vcs,
 		Worktrees:              &worktree.Manager{RepoDir: *repoDir, BaseDir: filepath.Join(*stateDir, "worktrees")},
 		WorkflowRestrictedPush: forge.Self == simplycubedAppLogin,
 	}
-	return &commonFlags{repoDir: *repoDir, base: *base, actor: *actor, cfg: cfg, deps: deps}, rest, nil
+	return &commonFlags{repoDir: *repoDir, base: *base, actor: *actor, cfg: cfg, deps: deps, dry: dryForge}, rest, nil
+}
+
+// reportDryRun prints the writes a dry run skipped, and appends them to the
+// GitHub Actions run summary when there is one, so the result is readable on
+// the run page rather than buried in step logs.
+func reportDryRun(c *commonFlags, w io.Writer) {
+	if c == nil || c.dry == nil {
+		return
+	}
+	report := c.dry.Report()
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, report)
+	if path := os.Getenv("GITHUB_STEP_SUMMARY"); path != "" {
+		f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+		if err != nil {
+			return
+		}
+		defer f.Close()
+		fmt.Fprintf(f, "## SimplyCubed Code dry run\n\n```\n%s\n```\n", report)
+	}
 }
 
 func runCmd(argv []string) error {
@@ -354,8 +390,12 @@ func runCmd(argv []string) error {
 		return fmt.Errorf("fetch issue: %w", err)
 	}
 
+	if c.dry != nil {
+		fmt.Println("DRY RUN: no GitHub writes and no push will happen.")
+	}
 	fmt.Printf("running %s#%d against gate %q ...\n", iss.Repo, iss.Number, c.cfg.Gate)
 	res, err := app.Run(context.Background(), c.deps, c.cfg, iss, c.base)
+	defer reportDryRun(c, os.Stdout)
 	if err != nil {
 		return err
 	}
@@ -385,6 +425,7 @@ func addressCmd(argv []string) error {
 
 	fmt.Printf("addressing feedback on %s#%d against gate %q ...\n", ref.Repo, ref.Number, c.cfg.Gate)
 	res, err := app.AddressPR(context.Background(), c.deps, c.cfg, ref.Repo, ref.Number)
+	defer reportDryRun(c, os.Stdout)
 	if err != nil {
 		return err
 	}

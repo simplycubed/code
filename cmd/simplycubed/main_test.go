@@ -2,7 +2,11 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"flag"
+	"github.com/simplycubed/code/internal/forge/dryrun"
+	forgefake "github.com/simplycubed/code/internal/forge/fake"
+	vcsgit "github.com/simplycubed/code/internal/vcs/git"
 	"io"
 	"os"
 	"path/filepath"
@@ -551,20 +555,20 @@ func TestDispatch(t *testing.T) {
 	}
 }
 
-func TestPrepare(t *testing.T) {
-	repoWithConfig := func(t *testing.T) string {
-		t.Helper()
-		dir := t.TempDir()
-		path := filepath.Join(dir, ".github", "simplycubed.yml")
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, []byte("gate: make check\nlabelPrefix: sc\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		return dir
+func repoWithConfig(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".github", "simplycubed.yml")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
 	}
+	if err := os.WriteFile(path, []byte("gate: make check\nlabelPrefix: sc\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
 
+func TestPrepare(t *testing.T) {
 	t.Run("builds the dependency graph and returns the positional arguments", func(t *testing.T) {
 		t.Setenv("AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
 		t.Setenv("AZURE_OPENAI_API_KEY", "k")
@@ -608,6 +612,39 @@ func TestPrepare(t *testing.T) {
 			t.Fatal("expected an error for an unknown flag")
 		}
 	})
+
+	// --dry-run has to reach both the forge and the VCS, or a "dry" run would
+	// still push.
+	t.Run("dry-run wraps the forge and disables the push", func(t *testing.T) {
+		t.Setenv("AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
+		t.Setenv("AZURE_OPENAI_API_KEY", "k")
+		c, _, err := prepare("run", []string{"--repo-dir", repoWithConfig(t), "--state-dir", t.TempDir(), "--dry-run"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if c.dry == nil {
+			t.Fatal("a dry run must record the writes it skips")
+		}
+		v, ok := c.deps.VCS.(*vcsgit.Git)
+		if !ok || !v.DryRun {
+			t.Fatalf("a dry run must not push: %#v", c.deps.VCS)
+		}
+	})
+
+	t.Run("a normal run does neither", func(t *testing.T) {
+		t.Setenv("AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
+		t.Setenv("AZURE_OPENAI_API_KEY", "k")
+		c, _, err := prepare("run", []string{"--repo-dir", repoWithConfig(t), "--state-dir", t.TempDir()})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if c.dry != nil {
+			t.Fatal("a normal run must not be in dry-run mode")
+		}
+		if v, ok := c.deps.VCS.(*vcsgit.Git); !ok || v.DryRun {
+			t.Fatal("a normal run must push")
+		}
+	})
 }
 
 func TestCommandCmdRoutesByCommentBody(t *testing.T) {
@@ -630,6 +667,54 @@ func TestCommandCmdRoutesByCommentBody(t *testing.T) {
 		}
 		if !strings.Contains(out.String(), "nothing to do") {
 			t.Fatalf("output = %q", out.String())
+		}
+	})
+}
+
+func TestReportDryRun(t *testing.T) {
+	// A run that is not a dry run must say nothing at all about dry runs.
+	t.Run("silent when not a dry run", func(t *testing.T) {
+		var out bytes.Buffer
+		reportDryRun(&commonFlags{}, &out)
+		reportDryRun(nil, &out)
+		if out.Len() != 0 {
+			t.Fatalf("expected no output, got %q", out.String())
+		}
+	})
+
+	// The report is the entire product of a dry run, and in Actions it has to
+	// reach the run summary or nobody reads it.
+	t.Run("prints the skipped writes and appends to the Actions summary", func(t *testing.T) {
+		d := dryrun.New(&forgefake.Forge{})
+		if _, err := d.OpenPR(context.Background(), "o/r", "sc/9", "Closes #9: t", "body"); err != nil {
+			t.Fatal(err)
+		}
+		summary := filepath.Join(t.TempDir(), "summary.md")
+		t.Setenv("GITHUB_STEP_SUMMARY", summary)
+
+		var out bytes.Buffer
+		reportDryRun(&commonFlags{dry: d}, &out)
+
+		if !strings.Contains(out.String(), "open-pr") || !strings.Contains(out.String(), "Closes #9") {
+			t.Fatalf("stdout missing the skipped write: %q", out.String())
+		}
+		b, err := os.ReadFile(summary)
+		if err != nil {
+			t.Fatalf("summary not written: %v", err)
+		}
+		if !strings.Contains(string(b), "SimplyCubed Code dry run") || !strings.Contains(string(b), "open-pr") {
+			t.Fatalf("summary missing the report:\n%s", b)
+		}
+	})
+
+	// A missing summary file must not break the run; it is an Actions nicety.
+	t.Run("survives an unwritable summary path", func(t *testing.T) {
+		d := dryrun.New(&forgefake.Forge{})
+		t.Setenv("GITHUB_STEP_SUMMARY", filepath.Join(t.TempDir(), "nope", "x.md"))
+		var out bytes.Buffer
+		reportDryRun(&commonFlags{dry: d}, &out)
+		if out.Len() == 0 {
+			t.Fatal("stdout should still get the report")
 		}
 	})
 }
