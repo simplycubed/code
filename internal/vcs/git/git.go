@@ -88,3 +88,22 @@ func (g *Git) Push(ctx context.Context, dir, branch string) error {
 	_, err := g.run(ctx, dir, "push", g.remote(), branch)
 	return err
 }
+
+// Sync hard-resets dir to the remote tip of branch. It fetches the branch and
+// resets the working tree to FETCH_HEAD, then removes untracked files. This is
+// used before the fixer runs so it edits the pull request's actual pushed state,
+// never a stale checkout a prior run left behind (a reused worktree). Working on
+// a stale tree and pushing would revert the human's or another commit's changes,
+// which is why this is a deliberate step rather than trusting the worktree.
+func (g *Git) Sync(ctx context.Context, dir, branch string) error {
+	if _, err := g.run(ctx, dir, "fetch", g.remote(), branch); err != nil {
+		return err
+	}
+	if _, err := g.run(ctx, dir, "reset", "--hard", "FETCH_HEAD"); err != nil {
+		return err
+	}
+	// Remove untracked files (including any scratch left behind) so the tree
+	// exactly matches the pushed head.
+	_, err := g.run(ctx, dir, "clean", "-fd")
+	return err
+}

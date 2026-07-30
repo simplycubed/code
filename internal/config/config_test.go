@@ -25,6 +25,23 @@ func TestParseRefusesMissingGate(t *testing.T) {
 	}
 }
 
+func TestParseAttributionDefaultsOnAndDisables(t *testing.T) {
+	on, err := Parse([]byte("gate: make check\n"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !on.Attribution {
+		t.Fatal("attribution should default to on")
+	}
+	off, err := Parse([]byte("gate: make check\nattribution: false\n"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if off.Attribution {
+		t.Fatal("attribution: false should disable attribution")
+	}
+}
+
 func TestParseOverridesAndComments(t *testing.T) {
 	in := `
 # a comment
