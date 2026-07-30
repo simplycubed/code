@@ -21,6 +21,7 @@ import (
 	"github.com/simplycubed/code/internal/loop"
 	"github.com/simplycubed/code/internal/roles"
 	"github.com/simplycubed/code/internal/state"
+	"github.com/simplycubed/code/internal/verdict"
 	"github.com/simplycubed/code/internal/worktree"
 )
 
@@ -30,6 +31,9 @@ type Deps struct {
 	Forge     forge.Forge
 	VCS       loop.VCS
 	Worktrees *worktree.Manager
+	// WorkflowRestrictedPush marks runs authenticated as the SimplyCubed GitHub
+	// App, whose token deliberately lacks `workflows` permission.
+	WorkflowRestrictedPush bool
 }
 
 var issueRefRE = regexp.MustCompile(`^([^/\s]+/[^/#\s]+)#(\d+)$`)
@@ -82,6 +86,41 @@ func describeHook(r engine.Runner, workDir string) func(context.Context, domain.
 			return ""
 		}
 		return describe.Render(a)
+	}
+}
+
+// reviewHook returns the loop's Review hook: one reviewer turn that writes a
+// verdict into the scratch directory, then read-parse. It reports false when no
+// usable verdict was produced, which the loop treats as an absent judgment
+// rather than a pass.
+func reviewHook(r engine.Runner, workDir string) func(context.Context, domain.Issue) (domain.Verdict, bool) {
+	return func(ctx context.Context, iss domain.Issue) (domain.Verdict, bool) {
+		if _, err := r.Run(ctx, domain.RunRequest{
+			Role:    domain.RoleReviewer,
+			WorkDir: workDir,
+			Prompt:  roles.AssembleReview(iss, verdict.RelPath),
+		}); err != nil {
+			return domain.Verdict{}, false
+		}
+		v, err := verdict.Load(workDir)
+		if err != nil {
+			return domain.Verdict{}, false
+		}
+		return v, true
+	}
+}
+
+// fixFindingsHook returns the loop's FixFindings hook: one fixer turn over the
+// reviewer's findings, delivered in the same shape a human review arrives in.
+func fixFindingsHook(r engine.Runner, workDir, gateCmd string, pr int) func(context.Context, domain.Issue, []domain.ReviewNote) error {
+	return func(ctx context.Context, iss domain.Issue, notes []domain.ReviewNote) error {
+		fb := domain.ReviewFeedback{PR: pr, Notes: notes}
+		_, err := r.Run(ctx, domain.RunRequest{
+			Role:    domain.RoleFixer,
+			WorkDir: workDir,
+			Prompt:  roles.AssembleFix(fb, gateCmd),
+		})
+		return err
 	}
 }
 
@@ -141,7 +180,13 @@ func AddressPR(ctx context.Context, d Deps, cfg *config.Config, repo string, pr 
 		Gate:   func(ctx context.Context, dir string) gate.Result { return gate.Run(ctx, dir, cfg.Gate) },
 		Forge:  d.Forge,
 		VCS:    d.VCS,
-		Cfg:    loop.Config{WorkDir: wt, Branch: fb.Branch, LabelPrefix: prefix, Attribute: cfg.Attribution},
+		Cfg: loop.Config{
+			WorkDir:                wt,
+			Branch:                 fb.Branch,
+			LabelPrefix:            prefix,
+			WorkflowRestrictedPush: d.WorkflowRestrictedPush,
+			Attribute:              cfg.Attribution,
+		},
 	}
 	return eng.Fix(ctx, loop.FixRequest{
 		Repo:   repo,
@@ -197,10 +242,20 @@ func Run(ctx context.Context, d Deps, cfg *config.Config, iss domain.Issue, base
 		Forge:  d.Forge,
 		VCS:    d.VCS,
 		Prompt: promptBuilder(cfg.Gate),
-		Cfg:    loop.Config{WorkDir: wt, Branch: branch, LabelPrefix: prefix, Attribute: cfg.Attribution},
+		Cfg: loop.Config{
+			WorkDir:                wt,
+			Branch:                 branch,
+			LabelPrefix:            prefix,
+			WorkflowRestrictedPush: d.WorkflowRestrictedPush,
+			Attribute:              cfg.Attribution,
+		},
 	}
 	if cfg.PRDescription == "rich" {
 		eng.Describe = describeHook(d.Runner, wt)
+	}
+	if cfg.Review {
+		eng.Review = reviewHook(d.Runner, wt)
+		eng.FixFindings = fixFindingsHook(d.Runner, wt, cfg.Gate, iss.Number)
 	}
 	return eng.Run(ctx, iss)
 }

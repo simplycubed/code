@@ -87,6 +87,7 @@ To run the loop inside your own GitHub Actions:
 1. Create and install the GitHub App, `simplycubed-code`.
    Repository permissions: `Contents`, `Pull requests`, and `Issues` only.
    Do not grant `Workflows`, `Administration`, `Environments`, or `Secrets`.
+   That means the App cannot push changes under `.github/workflows/`: if a run needs to edit a workflow file, make that commit as a human or run the CLI locally under your own `gh` auth instead of the App token.
    Disable the App webhook: the App is an identity that mints per-job tokens, and there is no SimplyCubed server to receive deliveries.
    Set install visibility to `Any account`.
    Install it on the repo.
@@ -103,6 +104,8 @@ repository and asks only for `contents`, `pull requests`, and `issues`. The
 workflow then probes an Actions-administration endpoint and expects a denial, so
 the run log shows the token does not carry the workflow/admin scope the App was
 deliberately denied.
+If a change touches `.github/workflows/`, that token cannot deliver it; use a
+human commit or a local CLI run under your own GitHub auth for those edits.
 
 ## Configuration
 
@@ -132,6 +135,14 @@ gate: make check
 prDescription: rich
 ```
 
+Set `review: true` to turn on the automated reviewer. After the gate passes, a read-only reviewer role judges the change and writes a structured verdict; its findings go to the fixer before a human ever sees the pull request, and the verdict summary appears in the pull-request body. It never approves and never merges: a verdict is advice to the loop, and the human review is unchanged.
+
+```yaml
+gate: make check
+
+review: true
+```
+
 A repo with no gate is refused, on purpose. An agent loop with nothing to stop it will wander, break things, and still report success. The gate is the safety mechanism, so the tool treats its absence as a configuration error rather than a default to paper over. The engineering that matters here is the gate, not the loop.
 
 Getting the gate right is where first runs stall: it has to be green on your own `main`, it should mirror what your CI actually enforces, and the genuinely environmental checks (a version matrix, Docker, tests that need a running service) stay in CI. The [FAQ](docs/faq.md) walks through each of these with real onboarding examples.
@@ -139,6 +150,14 @@ Getting the gate right is where first runs stall: it has to be green on your own
 ## Engines
 
 The model that writes the code sits behind a pluggable `Runner` interface, so you bring your own provider.
+
+Set `engine: claude` to use Claude Code instead of Codex. It runs headless (`claude -p`) against whatever credentials that CLI is already configured with, so there is no second key to manage here. The loop, the roles, and the gate are identical either way; the engine is the only thing that changes.
+
+```yaml
+gate: make check
+
+engine: claude
+```
 
 The first engine adapter targets the Codex CLI running against Azure OpenAI. Today the shipped setup needs an Azure endpoint, an API key, and optionally a deployment name override if you are not using the default `gpt-5.4`. A Claude Code adapter is planned. The `Runner` interface is the seam where other engines plug in.
 

@@ -16,6 +16,7 @@ import (
 	"github.com/simplycubed/code/internal/gate"
 	"github.com/simplycubed/code/internal/ledger"
 	"github.com/simplycubed/code/internal/state"
+	"github.com/simplycubed/code/internal/verdict"
 )
 
 // Outcome is how a run ended.
@@ -45,6 +46,10 @@ type Config struct {
 	LabelPrefix string // default "sc"
 	MaxRounds   int    // hard cap on act/grade rounds; default 4
 	RunID       string // used in ledger events
+	// WorkflowRestrictedPush marks runs authenticated as the SimplyCubed GitHub
+	// App, whose installation token deliberately lacks `workflows` permission.
+	// When such a run edits `.github/workflows/`, GitHub refuses the push.
+	WorkflowRestrictedPush bool
 	// Attribute stamps generated commits and pull requests with a SimplyCubed
 	// Code marker. The app wires this from the repo config (on by default).
 	Attribute bool
@@ -65,6 +70,14 @@ type VCS interface {
 	Sync(ctx context.Context, dir, branch string) error
 }
 
+type workflowToucher interface {
+	// TouchesWorkflow reports whether the working tree has changes under
+	// `.github/workflows/`.
+	TouchesWorkflow(ctx context.Context, dir string) (bool, error)
+}
+
+const workflowPushRefusal = "refusing to allow a GitHub App to create or update workflow"
+
 // Engine runs one issue to a terminal outcome.
 type Engine struct {
 	Runner engine.Runner
@@ -77,6 +90,16 @@ type Engine struct {
 	// the raw issue body. The app wires this to the roles package so the bounds
 	// (never edit the gate or tests to pass) travel with every turn.
 	Prompt func(role domain.Role, iss domain.Issue) string
+	// Review, when set, runs after the gate passes and judges the pending
+	// change. It returns the verdict and whether one was produced at all. The
+	// loop uses it to decide whether to open the pull request or hand findings
+	// to the fixer first. Nil means no automated review, which is the behaviour
+	// before this was wired.
+	Review func(ctx context.Context, iss domain.Issue) (domain.Verdict, bool)
+	// Fix, when set, addresses reviewer findings in-process before the pull
+	// request opens, so the human sees a change that has already answered the
+	// machine review.
+	FixFindings func(ctx context.Context, iss domain.Issue, notes []domain.ReviewNote) error
 	// Describe, when set, runs once after the gate passes and before the change
 	// is committed, and returns extra markdown for the pull-request body (issue
 	// #16). It is best-effort by contract: "" means the plain body, and no
@@ -93,6 +116,9 @@ type Engine struct {
 	// It is attached to an escalation so a human reading a blocked issue sees
 	// the agent's own account rather than only the loop's verdict.
 	lastSummary string
+	// lastVerdict is the most recent automated review, surfaced in the pull
+	// request so the human can see what the machine already checked.
+	lastVerdict domain.Verdict
 }
 
 // withSummary appends the engine's account of its last turn to an escalation
@@ -114,6 +140,38 @@ func (e *Engine) promptFor(role domain.Role, iss domain.Issue) string {
 		return e.Prompt(role, iss)
 	}
 	return iss.Body
+}
+
+func workflowPermissionReason() string {
+	return "the change touches `.github/workflows/`, but this run is authenticated as the `simplycubed-code[bot]` GitHub App, which deliberately lacks `workflows` permission. GitHub will refuse that push. Commit the workflow change as a human, or rerun the CLI under your own GitHub auth."
+}
+
+func workflowPushReason(err error) string {
+	if err == nil {
+		return ""
+	}
+	if strings.Contains(err.Error(), workflowPushRefusal) {
+		return workflowPermissionReason()
+	}
+	return ""
+}
+
+func (e *Engine) workflowPreflight(ctx context.Context) (string, error) {
+	if !e.Cfg.WorkflowRestrictedPush || e.VCS == nil {
+		return "", nil
+	}
+	vcs, ok := e.VCS.(workflowToucher)
+	if !ok {
+		return "", nil
+	}
+	touched, err := vcs.TouchesWorkflow(ctx, e.Cfg.WorkDir)
+	if err != nil {
+		return "", err
+	}
+	if !touched {
+		return "", nil
+	}
+	return workflowPermissionReason(), nil
 }
 
 // log records an event if a ledger is configured; otherwise it is a no-op.
@@ -167,6 +225,13 @@ func (e *Engine) Run(ctx context.Context, iss domain.Issue) (Result, error) {
 		// why. Without it an escalation reads as "nothing happened", which is
 		// exactly the case a human most needs explained.
 		e.lastSummary = res.Summary
+		reason, err := e.workflowPreflight(ctx)
+		if err != nil {
+			return e.escalate(ctx, iss, prefix, round, "workflow pre-flight failed: "+err.Error())
+		}
+		if reason != "" {
+			return e.escalate(ctx, iss, prefix, round, reason)
+		}
 
 		// Grade against the repo's own gate.
 		gr := e.Gate(ctx, e.Cfg.WorkDir)
@@ -176,7 +241,10 @@ func (e *Engine) Run(ctx context.Context, iss domain.Issue) (Result, error) {
 		}
 		e.log(iss, ledger.Event{Phase: ledger.PhaseRound, Round: round, Gate: gateStr})
 		if gr.Passed {
-			return e.openPR(ctx, iss, prefix, round)
+			if done, res, err := e.review(ctx, iss, prefix, round); done {
+				return res, err
+			}
+			continue
 		}
 		// Red. Stall detection: two reds in a row with the same signature means
 		// the change is not moving the failure. Stop rather than burn rounds.
@@ -232,6 +300,13 @@ func (e *Engine) Fix(ctx context.Context, req FixRequest) (Result, error) {
 			return e.fixEscalate(ctx, req, prefix, round, fmt.Sprintf("engine error: %v", err))
 		}
 		e.lastSummary = turn.Summary
+		reason, err := e.workflowPreflight(ctx)
+		if err != nil {
+			return e.fixEscalate(ctx, req, prefix, round, "workflow pre-flight failed: "+err.Error())
+		}
+		if reason != "" {
+			return e.fixEscalate(ctx, req, prefix, round, reason)
+		}
 
 		res := e.Gate(ctx, e.Cfg.WorkDir)
 		gateStr := "fail"
@@ -280,6 +355,9 @@ func (e *Engine) pushFix(ctx context.Context, req FixRequest, prefix string, rou
 			return e.fixEscalate(ctx, req, prefix, round, "gate passed but the fixer made no change to push")
 		}
 		if err := e.VCS.Push(ctx, e.Cfg.WorkDir, req.Branch); err != nil {
+			if reason := workflowPushReason(err); reason != "" {
+				return e.fixEscalate(ctx, req, prefix, round, reason)
+			}
 			return e.fixEscalate(ctx, req, prefix, round, "push failed: "+err.Error())
 		}
 	}
@@ -299,6 +377,49 @@ func (e *Engine) fixEscalate(ctx context.Context, req FixRequest, prefix string,
 	_ = e.Forge.SetState(ctx, req.Repo, target, state.Label(prefix, state.Blocked))
 	e.log(iss, ledger.Event{Phase: ledger.PhaseRunEnd, Outcome: string(OutcomeBlocked), Reason: reason})
 	return Result{Outcome: OutcomeBlocked, Rounds: round, Reason: reason}, nil
+}
+
+// review runs the automated reviewer once the gate is green. It reports whether
+// the run reached a terminal outcome. A verdict that is absent, malformed, or
+// pessimistic does not open a pull request; findings go to the fixer and the
+// loop takes another round, so the human reads a change the machine has already
+// argued with.
+func (e *Engine) review(ctx context.Context, iss domain.Issue, prefix string, round int) (bool, Result, error) {
+	if e.Review == nil {
+		res, err := e.openPR(ctx, iss, prefix, round)
+		return true, res, err
+	}
+	v, ok := e.Review(ctx, iss)
+	if !ok {
+		// No usable verdict. Silence is not approval, but it is also not a
+		// finding to act on, so the change goes to the human as it stands.
+		res, err := e.openPR(ctx, iss, prefix, round)
+		return true, res, err
+	}
+	e.lastVerdict = v
+	if verdict.Trusted(v) {
+		res, err := e.openPR(ctx, iss, prefix, round)
+		return true, res, err
+	}
+	notes := verdict.Render(v)
+	if len(notes) == 0 {
+		// It withheld a pass without saying why. There is nothing to fix, so a
+		// human decides rather than the loop spinning.
+		res, err := e.escalate(ctx, iss, prefix, round, "reviewer withheld a pass but reported no findings")
+		return true, res, err
+	}
+	if e.FixFindings == nil {
+		res, err := e.escalate(ctx, iss, prefix, round, "reviewer found problems and no fixer is wired")
+		return true, res, err
+	}
+	if err := e.FixFindings(ctx, iss, notes); err != nil {
+		res, err2 := e.escalate(ctx, iss, prefix, round, "addressing reviewer findings failed: "+err.Error())
+		if err2 != nil {
+			return true, res, err2
+		}
+		return true, res, nil
+	}
+	return false, Result{}, nil
 }
 
 func (e *Engine) openPR(ctx context.Context, iss domain.Issue, prefix string, round int) (Result, error) {
@@ -322,11 +443,17 @@ func (e *Engine) openPR(ctx context.Context, iss domain.Issue, prefix string, ro
 			return e.escalate(ctx, iss, prefix, round, "gate passed but the working tree has no changes to propose")
 		}
 		if err := e.VCS.Push(ctx, e.Cfg.WorkDir, e.Cfg.Branch); err != nil {
+			if reason := workflowPushReason(err); reason != "" {
+				return e.escalate(ctx, iss, prefix, round, reason)
+			}
 			return e.escalate(ctx, iss, prefix, round, "push failed: "+err.Error())
 		}
 	}
 
 	content := "Automated change from an issue. A human reviews and merges; this loop does not."
+	if s := strings.TrimSpace(e.lastVerdict.Summary); s != "" {
+		content += "\n\n**Automated review:** " + s
+	}
 	if description != "" {
 		content += "\n\n" + description
 	}
