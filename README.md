@@ -2,7 +2,7 @@
 
 An autonomous coding agent that lives inside your own GitHub. You file an issue, it opens a pull request, and a human decides whether to merge.
 
-> Status: beta. The core issue-to-pull-request flow works end to end; expect rough edges, and there is no stable release yet. See [Status](#status).
+> Status: beta. `v0.1.0` is the first tagged release; expect rough edges. See [Status](#status).
 
 ## What it is
 
@@ -60,6 +60,19 @@ Onboarding is meant to happen through GitHub itself rather than a local setup sc
 
 Because setup arrives as pull requests, you see exactly what the agent adds to your repo before any of it lands.
 
+## Installation
+
+Install the pinned release you want to run:
+
+```sh
+go install github.com/simplycubed/code/cmd/simplycubed@v0.1.0
+simplycubed version
+```
+
+That prints `0.1.0`. Pre-1.0 releases follow semver with the usual caveat: minor
+versions may still change behavior. Pin the tag you have validated rather than
+floating on `@latest`.
+
 ## Configuration
 
 Configuration lives in `.github/simplycubed.yml`. A minimal file looks like this:
@@ -100,7 +113,7 @@ The first engine adapter targets the Codex CLI running against Azure OpenAI (GPT
 
 ## Status
 
-Beta, and honest about it. Two loops run end to end via the CLI on the Codex-on-Azure engine: issue to pull request, and fix-on-request (a human requests changes, the fixer addresses them and pushes back). There is no stable release yet and you should expect rough edges.
+Beta, and honest about it. Two loops run end to end via the CLI on the Codex-on-Azure engine: issue to pull request, and fix-on-request (a human requests changes, the fixer addresses them and pushes back). `v0.1.0` is the first tagged release and you should still expect rough edges.
 
 Roadmap, roughly in order:
 
