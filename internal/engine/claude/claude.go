@@ -38,14 +38,18 @@ type Runner struct {
 	// ExtraEnv is appended to the child environment, for pre-configuring the
 	// workspace. See the package doc.
 	ExtraEnv []string
-	// SkipPermissions passes --dangerously-skip-permissions, which a headless
-	// run needs because there is no human to answer a prompt. Default true; the
-	// isolation boundary is the worktree and, in CI, the runner itself.
+	// SkipPermissions passes --dangerously-skip-permissions. It is OFF by
+	// default and has to be opted into.
+	//
+	// The vendor named the flag "dangerous" on purpose. A product whose whole
+	// claim is that a human stays in the loop should not turn that off for the
+	// operator as a convenience, and a headless run being awkward is not a
+	// reason to: it is a reason to configure the tool properly.
 	SkipPermissions bool
 }
 
 // New returns a Runner with the defaults applied.
-func New() *Runner { return &Runner{SkipPermissions: true} }
+func New() *Runner { return &Runner{} }
 
 func (r *Runner) bin() string {
 	if r.Bin != "" {
@@ -95,7 +99,7 @@ func (r *Runner) Run(ctx context.Context, req domain.RunRequest) (domain.RunResu
 // toolchain can write and the agent is never blocked by a read-only cache. Both
 // paths are on the VCS scratch-exclusion list, so they cannot reach a commit.
 func (r *Runner) childEnv(workDir string) []string {
-	env := filterEnvKeys(os.Environ(), "GOCACHE", "GOPATH")
+	env := filterEnvKeys(os.Environ(), "GOCACHE", "GOPATH", "GH_TOKEN", "GITHUB_TOKEN")
 	env = append(env, r.ExtraEnv...)
 	if !hasEnvKey(r.ExtraEnv, "GOCACHE") {
 		gc := filepath.Join(workDir, ".gocache")

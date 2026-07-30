@@ -53,6 +53,7 @@ What this buys you:
 
 - Your code stays in your repos. SimplyCubed never receives it.
 - Your model provider keys, the GitHub App's private key, and any other secrets stay in your GitHub secret store. They are read by your own Actions runs and never transit our infrastructure.
+- It does not use the engines' "dangerous" bypass flags, and does not receive a GitHub token in the model's shell. When a change cannot be made under those constraints, the run stops and a human finishes it. See the [FAQ](docs/faq.md).
 - The agent holds no deploy credentials and has no path to production. The most it can do is open a pull request against a branch. A human and your branch protection rules decide what happens next.
 
 Setup files are written locally by `simplycubed init` and merged by a human, because the runtime holds no `workflows` permission and cannot add its own workflow files.

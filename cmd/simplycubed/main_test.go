@@ -6,6 +6,7 @@ import (
 	"flag"
 	"github.com/simplycubed/code/internal/forge/dryrun"
 	forgefake "github.com/simplycubed/code/internal/forge/fake"
+	vcsgit "github.com/simplycubed/code/internal/vcs/git"
 	"io"
 	"os"
 	"path/filepath"
@@ -246,9 +247,20 @@ exit 0
 		}
 	}
 
+	// The self-test is written alongside the caller, and the operator is told to
+	// remove it: it is an install check, not part of normal operation.
+	selftestPath := filepath.Join(repoDir, ".github", "workflows", "simplycubed-selftest.yml")
+	if _, err := os.Stat(selftestPath); err != nil {
+		t.Fatalf("self-test workflow not written: %v", err)
+	}
 	output := out.String()
 	if !strings.Contains(output, "wrote "+workflowPath) {
 		t.Fatalf("expected workflow write message:\n%s", output)
+	}
+	for _, want := range []string{"run the self-test once", "delete " + ".github/workflows/simplycubed-selftest.yml"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("next steps missing %q:\n%s", want, output)
+		}
 	}
 }
 
@@ -543,20 +555,20 @@ func TestDispatch(t *testing.T) {
 	}
 }
 
-func TestPrepare(t *testing.T) {
-	repoWithConfig := func(t *testing.T) string {
-		t.Helper()
-		dir := t.TempDir()
-		path := filepath.Join(dir, ".github", "simplycubed.yml")
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, []byte("gate: make check\nlabelPrefix: sc\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		return dir
+func repoWithConfig(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".github", "simplycubed.yml")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
 	}
+	if err := os.WriteFile(path, []byte("gate: make check\nlabelPrefix: sc\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
 
+func TestPrepare(t *testing.T) {
 	t.Run("builds the dependency graph and returns the positional arguments", func(t *testing.T) {
 		t.Setenv("AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
 		t.Setenv("AZURE_OPENAI_API_KEY", "k")
@@ -598,6 +610,39 @@ func TestPrepare(t *testing.T) {
 	t.Run("rejects an unknown flag", func(t *testing.T) {
 		if _, _, err := prepare("run", []string{"--nope"}); err == nil {
 			t.Fatal("expected an error for an unknown flag")
+		}
+	})
+
+	// --dry-run has to reach both the forge and the VCS, or a "dry" run would
+	// still push.
+	t.Run("dry-run wraps the forge and disables the push", func(t *testing.T) {
+		t.Setenv("AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
+		t.Setenv("AZURE_OPENAI_API_KEY", "k")
+		c, _, err := prepare("run", []string{"--repo-dir", repoWithConfig(t), "--state-dir", t.TempDir(), "--dry-run"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if c.dry == nil {
+			t.Fatal("a dry run must record the writes it skips")
+		}
+		v, ok := c.deps.VCS.(*vcsgit.Git)
+		if !ok || !v.DryRun {
+			t.Fatalf("a dry run must not push: %#v", c.deps.VCS)
+		}
+	})
+
+	t.Run("a normal run does neither", func(t *testing.T) {
+		t.Setenv("AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
+		t.Setenv("AZURE_OPENAI_API_KEY", "k")
+		c, _, err := prepare("run", []string{"--repo-dir", repoWithConfig(t), "--state-dir", t.TempDir()})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if c.dry != nil {
+			t.Fatal("a normal run must not be in dry-run mode")
+		}
+		if v, ok := c.deps.VCS.(*vcsgit.Git); !ok || v.DryRun {
+			t.Fatal("a normal run must push")
 		}
 	})
 }
@@ -672,4 +717,42 @@ func TestReportDryRun(t *testing.T) {
 			t.Fatal("stdout should still get the report")
 		}
 	})
+}
+
+// Re-running init must never overwrite what an adopter has edited, including
+// the self-test they may have deliberately deleted or changed.
+func TestInitWithWorkflowIsIdempotent(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("gh stub is a POSIX shell script")
+	}
+	repoDir := t.TempDir()
+	stubDir := t.TempDir()
+	stub := filepath.Join(stubDir, "gh")
+	script := "#!/bin/sh\nif [ \"$1 $2\" = \"label list\" ]; then echo '[]'; fi\nexit 0\n"
+	if err := os.WriteFile(stub, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GH_STUB_LOG", filepath.Join(stubDir, "gh.log"))
+	t.Setenv("PATH", stubDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	var first bytes.Buffer
+	if err := initCmd([]string{"--repo-dir", repoDir, "--workflow"}, &first); err != nil {
+		t.Fatalf("first init: %v", err)
+	}
+	selftest := filepath.Join(repoDir, ".github", "workflows", "simplycubed-selftest.yml")
+	if err := os.WriteFile(selftest, []byte("# edited by the adopter\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var second bytes.Buffer
+	if err := initCmd([]string{"--repo-dir", repoDir, "--workflow"}, &second); err != nil {
+		t.Fatalf("second init: %v", err)
+	}
+	if !strings.Contains(second.String(), "left existing "+selftest+" unchanged") {
+		t.Fatalf("second run should report the self-test unchanged:\n%s", second.String())
+	}
+	got, err := os.ReadFile(selftest)
+	if err != nil || !strings.Contains(string(got), "edited by the adopter") {
+		t.Fatalf("the adopter's edit must survive: %q %v", got, err)
+	}
 }

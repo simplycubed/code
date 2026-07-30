@@ -115,16 +115,6 @@ func (g *Git) Push(ctx context.Context, dir, branch string) error {
 	return err
 }
 
-// Diff returns the change the run produced, for a dry run to show what it would
-// have proposed.
-func (g *Git) Diff(ctx context.Context, dir, base string) (string, error) {
-	out, err := g.run(ctx, dir, "diff", "--stat", base+"...HEAD")
-	if err != nil {
-		return "", err
-	}
-	return out, nil
-}
-
 // TouchesWorkflow reports whether the working tree has tracked or untracked
 // changes under `.github/workflows/`.
 func (g *Git) TouchesWorkflow(ctx context.Context, dir string) (bool, error) {

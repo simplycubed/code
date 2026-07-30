@@ -139,6 +139,9 @@ const (
 //go:embed simplycubed-caller.yml.tmpl
 var callerWorkflowTemplate string
 
+//go:embed simplycubed-selftest.yml.tmpl
+var selftestWorkflowTemplate string
+
 // engineEnv validates the engine settings and returns the normalized endpoint.
 // It is the single implementation: `prepare` calls it before a run, and the
 // `preflight` command calls it so a workflow can fail early without a second
@@ -451,9 +454,19 @@ func initCmd(argv []string, stdout io.Writer) error {
 		return err
 	}
 	workflowPath := filepath.Join(*repoDir, ".github", "workflows", "simplycubed.yml")
+	selftestPath := filepath.Join(*repoDir, ".github", "workflows", "simplycubed-selftest.yml")
 	wroteWorkflow := false
+	wroteSelftest := false
 	if *writeWorkflow {
 		wroteWorkflow, err = writeStarterFile(workflowPath, renderCallerWorkflow(buildinfo.Version))
+		if err != nil {
+			return err
+		}
+		// The self-test answers questions only a real runner can answer. It is
+		// written alongside the caller so a bad install fails in a minute here
+		// rather than silently during a real run, and the next steps tell the
+		// operator to remove it once it has done its job.
+		wroteSelftest, err = writeStarterFile(selftestPath, selftestWorkflowTemplate)
 		if err != nil {
 			return err
 		}
@@ -476,6 +489,11 @@ func initCmd(argv []string, stdout io.Writer) error {
 		} else {
 			fmt.Fprintf(stdout, "left existing %s unchanged\n", workflowPath)
 		}
+		if wroteSelftest {
+			fmt.Fprintf(stdout, "wrote %s\n", selftestPath)
+		} else {
+			fmt.Fprintf(stdout, "left existing %s unchanged\n", selftestPath)
+		}
 	}
 	if len(created) == 0 {
 		fmt.Fprintln(stdout, "labels already present: no changes")
@@ -492,6 +510,8 @@ func initCmd(argv []string, stdout io.Writer) error {
 	fmt.Fprintln(stdout, "  - set the AZURE_OPENAI_ENDPOINT repo variable")
 	fmt.Fprintln(stdout, "  - add the AZURE_OPENAI_API_KEY repo secret")
 	fmt.Fprintln(stdout, "  - merge the PR containing the config and workflow changes")
+	fmt.Fprintln(stdout, "  - run the self-test once: gh workflow run simplycubed-selftest")
+	fmt.Fprintln(stdout, "  - delete .github/workflows/simplycubed-selftest.yml once it passes")
 	fmt.Fprintln(stdout, "  - file an issue and apply the sc:go label")
 	return nil
 }

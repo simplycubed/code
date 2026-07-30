@@ -108,11 +108,6 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           AZURE_OPENAI_ENDPOINT: ${{ inputs['azure-openai-endpoint'] }}
           AZURE_OPENAI_API_KEY: ${{ secrets['azure-openai-api-key'] }}
-          # The engine's own sandbox cannot start inside a runner: bubblewrap
-          # cannot create a network namespace here, and every command it tries
-          # fails. The runner is the isolation boundary instead - a token scoped
-          # to this repository, no production credentials, destroyed at job end.
-          SIMPLYCUBED_SANDBOX: danger-full-access
         # --base is explicit because actions/checkout never creates origin/HEAD,
         # which is the CLI's default base. The CLI resolves that case on its own
         # now, but naming the branch the event came from is exact rather than
@@ -171,5 +166,9 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           AZURE_OPENAI_ENDPOINT: ${{ inputs['azure-openai-endpoint'] }}
           AZURE_OPENAI_API_KEY: ${{ secrets['azure-openai-api-key'] }}
+<<<<<<< HEAD
           SIMPLYCUBED_SANDBOX: danger-full-access
         run: simplycubed address ${{ inputs['dry-run'] && '--dry-run' || '' }} "${GITHUB_REPOSITORY}#${{ inputs['pr-number'] }}" --actor "${{ inputs['actor-login'] }}" --model "${{ inputs.model }}" --repo-dir .
+=======
+        run: simplycubed address "${GITHUB_REPOSITORY}#${{ inputs['pr-number'] }}" --actor "${{ inputs['actor-login'] }}" --model "${{ inputs.model }}" --repo-dir .
+>>>>>>> origin/main
