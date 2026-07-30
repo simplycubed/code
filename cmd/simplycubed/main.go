@@ -9,6 +9,7 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -65,7 +66,7 @@ func usage() {
 
 usage:
   simplycubed version
-  simplycubed init [--repo-dir .]
+  simplycubed init [--repo-dir .] [--workflow]
   simplycubed run <owner/repo#N> [flags]
   simplycubed address <owner/repo#PR> [flags]
 
@@ -101,6 +102,14 @@ gate:
 # Optional. Ask the agent to add a generated walkthrough and changes table to PRs.
 # prDescription: rich
 `
+
+const (
+	latestKnownWorkflowTag = "v0.1.0"
+	callerWorkflowTagToken = "__SIMPLYCUBED_TAG__"
+)
+
+//go:embed simplycubed-caller.yml.tmpl
+var callerWorkflowTemplate string
 
 // commonFlags are the flags shared by run and address, plus the resolved config
 // and dependency graph both commands need.
@@ -245,6 +254,7 @@ func addressCmd(argv []string) error {
 func initCmd(argv []string, stdout io.Writer) error {
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
 	repoDir := fs.String("repo-dir", ".", "path to the target repo checkout")
+	writeWorkflow := fs.Bool("workflow", false, "also write the Actions caller workflow")
 	if _, err := parseInterleaved(fs, argv); err != nil {
 		return err
 	}
@@ -253,6 +263,14 @@ func initCmd(argv []string, stdout io.Writer) error {
 	wroteConfig, err := writeStarterConfig(configPath)
 	if err != nil {
 		return err
+	}
+	workflowPath := filepath.Join(*repoDir, ".github", "workflows", "simplycubed.yml")
+	wroteWorkflow := false
+	if *writeWorkflow {
+		wroteWorkflow, err = writeStarterFile(workflowPath, renderCallerWorkflow(buildinfo.Version))
+		if err != nil {
+			return err
+		}
 	}
 
 	labels := app.StateLabels(config.DefaultLabelPrefix)
@@ -266,6 +284,13 @@ func initCmd(argv []string, stdout io.Writer) error {
 	} else {
 		fmt.Fprintf(stdout, "left existing %s unchanged\n", configPath)
 	}
+	if *writeWorkflow {
+		if wroteWorkflow {
+			fmt.Fprintf(stdout, "wrote %s\n", workflowPath)
+		} else {
+			fmt.Fprintf(stdout, "left existing %s unchanged\n", workflowPath)
+		}
+	}
 	if len(created) == 0 {
 		fmt.Fprintln(stdout, "labels already present: no changes")
 	} else {
@@ -274,12 +299,19 @@ func initCmd(argv []string, stdout io.Writer) error {
 	fmt.Fprintln(stdout, "next steps:")
 	fmt.Fprintln(stdout, "  - write the real gate in .github/simplycubed.yml")
 	fmt.Fprintln(stdout, "  - verify that gate is green on your main branch")
-	fmt.Fprintln(stdout, "  - set AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY")
+	fmt.Fprintln(stdout, "  - set the AZURE_OPENAI_ENDPOINT repo variable")
+	fmt.Fprintln(stdout, "  - add the AZURE_OPENAI_API_KEY repo secret")
+	fmt.Fprintln(stdout, "  - optionally add the SIMPLYCUBED_GH_TOKEN repo secret")
+	fmt.Fprintln(stdout, "  - merge the PR containing the config and workflow changes")
 	fmt.Fprintln(stdout, "  - file an issue and apply the sc:go label")
 	return nil
 }
 
 func writeStarterConfig(path string) (bool, error) {
+	return writeStarterFile(path, starterConfig)
+}
+
+func writeStarterFile(path, body string) (bool, error) {
 	if _, err := os.Stat(path); err == nil {
 		return false, nil
 	} else if !os.IsNotExist(err) {
@@ -288,10 +320,40 @@ func writeStarterConfig(path string) (bool, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return false, err
 	}
-	if err := os.WriteFile(path, []byte(starterConfig), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		return false, err
 	}
 	return true, nil
+}
+
+func renderCallerWorkflow(version string) string {
+	return strings.ReplaceAll(callerWorkflowTemplate, callerWorkflowTagToken, workflowTemplateTag(version))
+}
+
+func workflowTemplateTag(version string) string {
+	version = strings.TrimPrefix(strings.TrimSpace(version), "v")
+	if isReleaseVersion(version) {
+		return "v" + version
+	}
+	return latestKnownWorkflowTag
+}
+
+func isReleaseVersion(version string) bool {
+	parts := strings.Split(version, ".")
+	if len(parts) != 3 {
+		return false
+	}
+	for _, part := range parts {
+		if part == "" {
+			return false
+		}
+		for _, r := range part {
+			if r < '0' || r > '9' {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // fetchIssue fills the issue title and body from GitHub via gh.
