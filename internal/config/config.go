@@ -28,6 +28,10 @@ type Config struct {
 	LabelPrefix string
 	Gate        string
 	Setup       string
+	// Attribution controls whether generated commits and pull requests carry a
+	// "SimplyCubed Code" marker. On by default; a repo owner turns it off with
+	// `attribution: false`.
+	Attribution bool
 }
 
 // Load reads and validates the config file at path.
@@ -41,7 +45,7 @@ func Load(path string) (*Config, error) {
 
 // Parse parses and validates config bytes.
 func Parse(b []byte) (*Config, error) {
-	c := &Config{LabelPrefix: DefaultLabelPrefix}
+	c := &Config{LabelPrefix: DefaultLabelPrefix, Attribution: true}
 	for _, raw := range strings.Split(string(b), "\n") {
 		line := strings.TrimSpace(raw)
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -62,6 +66,12 @@ func Parse(b []byte) (*Config, error) {
 			c.Gate = val
 		case "setup":
 			c.Setup = val
+		case "attribution":
+			// Any explicit falsey value disables it; otherwise it stays on.
+			switch strings.ToLower(val) {
+			case "false", "no", "off", "0":
+				c.Attribution = false
+			}
 		}
 	}
 	if strings.TrimSpace(c.Gate) == "" {

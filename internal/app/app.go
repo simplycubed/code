@@ -83,7 +83,7 @@ func Run(ctx context.Context, d Deps, cfg *config.Config, iss domain.Issue, base
 		Forge:  d.Forge,
 		VCS:    d.VCS,
 		Prompt: promptBuilder(cfg.Gate),
-		Cfg:    loop.Config{WorkDir: wt, Branch: branch, LabelPrefix: prefix},
+		Cfg:    loop.Config{WorkDir: wt, Branch: branch, LabelPrefix: prefix, Attribute: cfg.Attribution},
 	}
 	return eng.Run(ctx, iss)
 }

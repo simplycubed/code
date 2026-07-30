@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/simplycubed/code/internal/attribution"
 	"github.com/simplycubed/code/internal/domain"
 	"github.com/simplycubed/code/internal/engine"
 	"github.com/simplycubed/code/internal/forge"
@@ -37,6 +38,9 @@ type Config struct {
 	LabelPrefix string // default "sc"
 	MaxRounds   int    // hard cap on act/grade rounds; default 4
 	RunID       string // used in ledger events
+	// Attribute stamps generated commits and pull requests with a SimplyCubed
+	// Code marker. The app wires this from the repo config (on by default).
+	Attribute bool
 }
 
 // VCS commits and pushes the agent's changes so a pull request can be opened
@@ -155,7 +159,7 @@ func (e *Engine) openPR(ctx context.Context, iss domain.Issue, prefix string, ro
 	// would have no content. Skipped when no VCS is wired (unit tests).
 	if e.VCS != nil {
 		committed, err := e.VCS.Commit(ctx, e.Cfg.WorkDir,
-			fmt.Sprintf("Closes #%d: %s", iss.Number, iss.Title))
+			attribution.Commit(fmt.Sprintf("Closes #%d: %s", iss.Number, iss.Title), e.Cfg.Attribute))
 		if err != nil {
 			return e.escalate(ctx, iss, prefix, round, "commit failed: "+err.Error())
 		}
@@ -170,7 +174,7 @@ func (e *Engine) openPR(ctx context.Context, iss domain.Issue, prefix string, ro
 
 	url, err := e.Forge.OpenPR(ctx, iss.Repo, e.Cfg.Branch,
 		fmt.Sprintf("Closes #%d: %s", iss.Number, iss.Title),
-		"Automated change from an issue. A human reviews and merges; this loop does not.")
+		attribution.PRBody("Automated change from an issue. A human reviews and merges; this loop does not.", e.Cfg.Attribute))
 	if err != nil {
 		e.log(iss, ledger.Event{Phase: ledger.PhaseRunEnd, Outcome: string(OutcomeBlocked), Reason: "open PR failed"})
 		return Result{Outcome: OutcomeBlocked, Rounds: round, Reason: "open PR failed: " + err.Error()}, err
