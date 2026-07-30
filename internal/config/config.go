@@ -36,6 +36,9 @@ type Config struct {
 	// default) is the plain one-line body; "rich" adds a generated walkthrough,
 	// changes table, and sequence diagram (issue #16). Opt-in until validated.
 	PRDescription string
+	// Engine selects the adapter that writes the code: "codex" (default) or
+	// "claude". The loop, the roles, and the gate are identical either way.
+	Engine string
 }
 
 // Load reads and validates the config file at path.
@@ -75,6 +78,11 @@ func Parse(b []byte) (*Config, error) {
 			switch strings.ToLower(val) {
 			case "false", "no", "off", "0":
 				c.Attribution = false
+			}
+		case "engine":
+			switch strings.ToLower(val) {
+			case "codex", "claude":
+				c.Engine = strings.ToLower(val)
 			}
 		case "prDescription":
 			// Only the documented value enables it; anything else is the default

@@ -78,3 +78,23 @@ func TestParsePRDescription(t *testing.T) {
 		t.Fatalf("unknown value must fail safe, got %q err = %v", c.PRDescription, err)
 	}
 }
+
+func TestParseEngineSelection(t *testing.T) {
+	// Default is codex, so an existing repo's behaviour is unchanged.
+	c, err := Parse([]byte("gate: make check\n"))
+	if err != nil || c.Engine != "" {
+		t.Fatalf("default Engine = %q err = %v", c.Engine, err)
+	}
+	for in, want := range map[string]string{"claude": "claude", "CODEX": "codex"} {
+		c, err := Parse([]byte("gate: make check\nengine: " + in + "\n"))
+		if err != nil || c.Engine != want {
+			t.Fatalf("engine %q -> %q err = %v", in, c.Engine, err)
+		}
+	}
+	// An unknown engine falls back to the default rather than failing a run
+	// later with an unhelpful error.
+	c, err = Parse([]byte("gate: make check\nengine: gpt9\n"))
+	if err != nil || c.Engine != "" {
+		t.Fatalf("unknown engine should fall back, got %q err = %v", c.Engine, err)
+	}
+}
