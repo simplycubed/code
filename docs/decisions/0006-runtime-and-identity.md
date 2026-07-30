@@ -1,7 +1,6 @@
 # 0006. Runtime on GitHub Actions, and identity
 
-Status: Accepted for the runtime; the one-App-versus-two identity question is
-open.
+Status: Accepted.
 
 ## Context
 
@@ -29,11 +28,19 @@ contents plus pull requests plus issues, and nothing else. It never receives
 permission over workflows, administration, environments, or secrets, so it cannot
 edit its own CI gate or reach deploy configuration.
 
-## Open: one App or two
+## Decision update: two Apps, not one
 
-A single App can carry both the implementer and reviewer roles, with the role
-shown in the comment header and least privilege achieved by scoping the
-per-request token. Two Apps (a worker identity and a reviewer identity) buy
-identity-level audit separation at the cost of a second install and a second key.
-Per-request token scoping is required either way. This is deferred to when the
-Action is built; the loop does not depend on the answer.
+Use two Apps: a worker App (`simplycubed-code`) that authors commits, pull
+requests, labels, and comments, and a separate reviewer App for the future
+automated review role.
+
+Reason: a single principal cannot leave a "request changes" review on its own
+pull request. Live runs hit exactly that wall when the CLI authenticated as the
+repo owner, and the same GitHub author/reviewer restriction would still apply if
+both roles shared one App identity. Two Apps preserve the separation GitHub
+enforces at the principal level, while per-job installation tokens still provide
+least privilege inside each role.
+
+Today only the worker App is wired, because the human reviewer remains the
+reviewing principal in the current loop. When the automated reviewer role is
+connected, it must use the second App rather than the worker App's token.

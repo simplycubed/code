@@ -116,11 +116,14 @@ exit 0
 	for _, want := range []string{
 		"wrote " + configPath,
 		"created labels: sc:go, sc:queued, sc:working, sc:review, sc:blocked, sc:done",
+		"install the simplycubed-code GitHub App with contents, issues, and pull requests permissions only",
+		"set the App install visibility to Any account and subscribe it to issues + pull request review webhooks",
 		"write the real gate in .github/simplycubed.yml",
 		"verify that gate is green on your main branch",
+		"set the SIMPLYCUBED_GH_APP_ID repo variable",
+		"add the SIMPLYCUBED_GH_APP_PRIVATE_KEY repo secret",
 		"set the AZURE_OPENAI_ENDPOINT repo variable",
 		"add the AZURE_OPENAI_API_KEY repo secret",
-		"optionally add the SIMPLYCUBED_GH_TOKEN repo secret",
 		"merge the PR containing the config and workflow changes",
 		"file an issue and apply the sc:go label",
 	} {
@@ -231,7 +234,9 @@ exit 0
 	}
 	for _, want := range []string{
 		"uses: simplycubed/code/.github/workflows/simplycubed.yml@v0.1.0",
+		"github-app-id: ${{ vars.SIMPLYCUBED_GH_APP_ID }}",
 		"azure-openai-api-key: ${{ secrets.AZURE_OPENAI_API_KEY }}",
+		"github-app-private-key: ${{ secrets.SIMPLYCUBED_GH_APP_PRIVATE_KEY }}",
 	} {
 		if !strings.Contains(workflow, want) {
 			t.Fatalf("workflow missing %q:\n%s", want, workflow)
