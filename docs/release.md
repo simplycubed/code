@@ -17,7 +17,8 @@ For each tag:
 1. Update `CHANGELOG.md`.
 2. Confirm `go install github.com/simplycubed/code/cmd/simplycubed@<tag>` and
    `simplycubed version` report the same version without the leading `v`.
-3. Push the tag and publish matching GitHub release notes.
+3. Update `latestKnownWorkflowTag` in `cmd/simplycubed/main.go`.
+4. Push the tag and publish matching GitHub release notes.
 
 ## Binary releases
 

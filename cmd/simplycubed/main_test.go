@@ -356,6 +356,20 @@ func TestWorkflowTemplateTag(t *testing.T) {
 	}
 }
 
+func TestCallerWorkflowTemplateMatchesDocsTemplate(t *testing.T) {
+	t.Parallel()
+
+	want, err := os.ReadFile(filepath.Join("..", "..", "docs", "templates", "simplycubed-caller.yml"))
+	if err != nil {
+		t.Fatalf("read docs template: %v", err)
+	}
+
+	got := []byte(renderCallerWorkflow("v0.1.0"))
+	if !bytes.Equal(got, want) {
+		t.Fatalf("rendered embedded template does not match docs template\nrendered:\n%s\n\ndocs:\n%s", got, want)
+	}
+}
+
 func buildVersionForTest(t *testing.T, version string) string {
 	t.Helper()
 	original := buildinfo.Version
