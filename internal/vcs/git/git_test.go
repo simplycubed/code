@@ -192,3 +192,28 @@ func TestTouchesWorkflowReportsOnlyWorkflowChanges(t *testing.T) {
 		t.Fatal("non-workflow edits must not trip workflow detection")
 	}
 }
+
+// A dry run may commit, because the worktree is thrown away and the commit is
+// what makes the change inspectable. Pushing is the first step that changes
+// someone's repository, so it must not happen.
+func TestDryRunCommitsButDoesNotPush(t *testing.T) {
+	work := repoWithBareRemote(t)
+	g := &Git{DryRun: true}
+	ctx := context.Background()
+	gitCmd(t, work, "checkout", "-q", "-b", "sc/1")
+	if err := os.WriteFile(filepath.Join(work, "a.txt"), []byte("hi"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	committed, err := g.Commit(ctx, work, "change")
+	if err != nil || !committed {
+		t.Fatalf("a dry run should still commit: committed=%v err=%v", committed, err)
+	}
+	if err := g.Push(ctx, work, "sc/1"); err != nil {
+		t.Fatalf("dry-run push should be a no-op, got: %v", err)
+	}
+	// The remote must not have the branch.
+	out := gitCmd(t, work, "ls-remote", "--heads", "origin", "sc/1")
+	if strings.TrimSpace(out) != "" {
+		t.Fatalf("a dry run must not push, but the remote has the branch: %s", out)
+	}
+}

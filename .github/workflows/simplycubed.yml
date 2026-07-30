@@ -21,6 +21,11 @@ on:
         default: ""
         required: false
         type: string
+      dry-run:
+        description: Run the whole loop but make no GitHub writes and no push.
+        default: false
+        required: false
+        type: boolean
       comment-body:
         description: Body of the comment that triggered this run, when triggered by a comment.
         default: ""
@@ -112,7 +117,7 @@ jobs:
         # which is the CLI's default base. The CLI resolves that case on its own
         # now, but naming the branch the event came from is exact rather than
         # inferred.
-        run: simplycubed run "${GITHUB_REPOSITORY}#${{ inputs['issue-number'] }}" --actor "${{ inputs['actor-login'] }}" --model "${{ inputs.model }}" --base "origin/${{ github.event.repository.default_branch }}" --repo-dir .
+        run: simplycubed run ${{ inputs['dry-run'] && '--dry-run' || '' }} "${GITHUB_REPOSITORY}#${{ inputs['issue-number'] }}" --actor "${{ inputs['actor-login'] }}" --model "${{ inputs.model }}" --base "origin/${{ github.event.repository.default_branch }}" --repo-dir .
 
   address:
     if: ${{ inputs['pr-number'] != '' }}
@@ -167,4 +172,4 @@ jobs:
           AZURE_OPENAI_ENDPOINT: ${{ inputs['azure-openai-endpoint'] }}
           AZURE_OPENAI_API_KEY: ${{ secrets['azure-openai-api-key'] }}
           SIMPLYCUBED_SANDBOX: danger-full-access
-        run: simplycubed address "${GITHUB_REPOSITORY}#${{ inputs['pr-number'] }}" --actor "${{ inputs['actor-login'] }}" --model "${{ inputs.model }}" --repo-dir .
+        run: simplycubed address ${{ inputs['dry-run'] && '--dry-run' || '' }} "${GITHUB_REPOSITORY}#${{ inputs['pr-number'] }}" --actor "${{ inputs['actor-login'] }}" --model "${{ inputs.model }}" --repo-dir .

@@ -25,6 +25,10 @@ type Git struct {
 	// machine it happens to be on.
 	AuthorName  string
 	AuthorEmail string
+	// DryRun skips the push. The commit still happens, because it is local to a
+	// worktree that is thrown away, and committing is what makes the diff
+	// inspectable. Pushing is the first step that changes someone's repository.
+	DryRun bool
 	// ScratchPaths are worktree-relative paths of transient agent scratch (build
 	// and module caches the engine writes inside the worktree). They are removed
 	// before staging so they never land in a commit. Defaults to .gocache,
@@ -102,10 +106,23 @@ func (g *Git) Commit(ctx context.Context, dir, message string) (bool, error) {
 	return true, nil
 }
 
-// Push pushes branch from dir to the remote.
+// Push pushes branch from dir to the remote, unless this is a dry run.
 func (g *Git) Push(ctx context.Context, dir, branch string) error {
+	if g.DryRun {
+		return nil
+	}
 	_, err := g.run(ctx, dir, "push", g.remote(), branch)
 	return err
+}
+
+// Diff returns the change the run produced, for a dry run to show what it would
+// have proposed.
+func (g *Git) Diff(ctx context.Context, dir, base string) (string, error) {
+	out, err := g.run(ctx, dir, "diff", "--stat", base+"...HEAD")
+	if err != nil {
+		return "", err
+	}
+	return out, nil
 }
 
 // TouchesWorkflow reports whether the working tree has tracked or untracked
