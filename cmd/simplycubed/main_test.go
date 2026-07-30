@@ -413,3 +413,66 @@ func TestEngineEnvValidatesEndpointAndKey(t *testing.T) {
 		}
 	}
 }
+
+func TestPreflightCmd(t *testing.T) {
+	writeConfig := func(t *testing.T) string {
+		t.Helper()
+		dir := t.TempDir()
+		path := filepath.Join(dir, ".github", "simplycubed.yml")
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("gate: make check\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return dir
+	}
+
+	t.Run("reports ok when config and engine settings are present", func(t *testing.T) {
+		t.Setenv("AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
+		t.Setenv("AZURE_OPENAI_API_KEY", "k")
+		var out bytes.Buffer
+		if err := preflightCmd([]string{"--repo-dir", writeConfig(t)}, &out); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(out.String(), "preflight ok") {
+			t.Fatalf("output = %q", out.String())
+		}
+	})
+
+	// The whole point of preflight is naming what is wrong, so each failure
+	// asserts the message identifies the thing the operator has to fix.
+	t.Run("names the missing config", func(t *testing.T) {
+		t.Setenv("AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
+		t.Setenv("AZURE_OPENAI_API_KEY", "k")
+		err := preflightCmd([]string{"--repo-dir", t.TempDir()}, io.Discard)
+		if err == nil || !strings.Contains(err.Error(), "load config") {
+			t.Fatalf("err = %v, want a config error", err)
+		}
+	})
+
+	t.Run("names the missing endpoint", func(t *testing.T) {
+		t.Setenv("AZURE_OPENAI_ENDPOINT", "")
+		t.Setenv("AZURE_OPENAI_API_KEY", "k")
+		err := preflightCmd([]string{"--repo-dir", writeConfig(t)}, io.Discard)
+		if err == nil || !strings.Contains(err.Error(), "AZURE_OPENAI_ENDPOINT") {
+			t.Fatalf("err = %v, want the endpoint named", err)
+		}
+	})
+
+	t.Run("rejects an unknown flag", func(t *testing.T) {
+		if err := preflightCmd([]string{"--nope"}, io.Discard); err == nil {
+			t.Fatal("expected an error for an unknown flag")
+		}
+	})
+}
+
+func TestEngineEnvRejectsAnUnparseableEndpoint(t *testing.T) {
+	// A control character makes url.Parse itself fail, which is a different
+	// branch from the scheme and host checks.
+	t.Setenv("AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com/\x7f")
+	t.Setenv("AZURE_OPENAI_API_KEY", "k")
+	if _, err := engineEnv(); err == nil {
+		t.Fatal("expected an error for an unparseable endpoint")
+	}
+}
