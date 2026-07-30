@@ -25,6 +25,8 @@ import (
 	"github.com/simplycubed/code/internal/buildinfo"
 	"github.com/simplycubed/code/internal/config"
 	"github.com/simplycubed/code/internal/domain"
+	"github.com/simplycubed/code/internal/engine"
+	"github.com/simplycubed/code/internal/engine/claude"
 	"github.com/simplycubed/code/internal/engine/codex"
 	forgegh "github.com/simplycubed/code/internal/forge/gh"
 	"github.com/simplycubed/code/internal/loop"
@@ -178,7 +180,10 @@ func newVCS(self string) *vcsgit.Git {
 // CI the ephemeral runner is itself the isolation boundary: a per-job token
 // scoped to one repository, no production credentials, and the machine is
 // destroyed afterwards. Locally the sandbox stays on.
-func newRunner(codexHome string) *codex.Runner {
+func newRunner(cfg *config.Config, codexHome string) engine.Runner {
+	if cfg.Engine == "claude" {
+		return claude.New()
+	}
 	r := codex.New(codexHome)
 	if mode := os.Getenv("SIMPLYCUBED_SANDBOX"); mode != "" {
 		r.Sandbox = mode
@@ -286,7 +291,7 @@ func prepare(name string, argv []string) (*commonFlags, []string, error) {
 	}
 
 	deps := app.Deps{
-		Runner: newRunner(codexHome),
+		Runner: newRunner(cfg, codexHome),
 		// Self, when set, filters the agent's own review feedback out of the fix
 		// loop. Empty for local runs, where the operator is a human, not the bot.
 		Forge:                  forge,

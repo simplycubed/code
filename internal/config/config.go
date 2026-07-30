@@ -36,6 +36,9 @@ type Config struct {
 	// default) is the plain one-line body; "rich" adds a generated walkthrough,
 	// changes table, and sequence diagram (issue #16). Opt-in until validated.
 	PRDescription string
+	// Engine selects the adapter that writes the code: "codex" (default) or
+	// "claude". The loop, the roles, and the gate are identical either way.
+	Engine string
 	// Review turns on the automated reviewer: after the gate passes, a
 	// read-only reviewer judges the change and its findings go to the fixer
 	// before a human ever sees the pull request. Off by default.
@@ -79,6 +82,11 @@ func Parse(b []byte) (*Config, error) {
 			switch strings.ToLower(val) {
 			case "false", "no", "off", "0":
 				c.Attribution = false
+			}
+		case "engine":
+			switch strings.ToLower(val) {
+			case "codex", "claude":
+				c.Engine = strings.ToLower(val)
 			}
 		case "review":
 			switch strings.ToLower(val) {
