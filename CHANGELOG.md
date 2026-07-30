@@ -3,6 +3,31 @@
 All notable changes are recorded here and summarized again in the matching
 GitHub release notes for each tag.
 
+## v0.1.6
+
+- **The Actions runtime works end to end.** Two environment blockers are fixed:
+  the engine's sandbox could not start inside a runner, so the agent could not
+  execute a single command; and a runner has no git identity, so commits failed
+  after the gate had already passed.
+- **Automated reviewer** (`review: true`, off by default). After the gate
+  passes, a read-only reviewer judges the change and its findings go to the
+  fixer before a human sees the pull request. It never approves and never
+  merges. A pass carrying a blocker is not trusted.
+- **Claude Code engine** (`engine: claude`, default `codex`). The loop, roles,
+  and gate are unchanged by which model writes the code.
+- **Comment commands**: `@simplycubed-code go`, `address`, and `help`, acted on
+  only for commenters with write access.
+- The reusable workflow carries values rather than decisions: authorization,
+  identity resolution, and engine validation moved into the product, where they
+  are tested. It is 265 lines shorter and its two jobs are now identical.
+- Releases are cut by a workflow, not a local tag, and refuse to proceed when
+  the changelog or any version pin disagrees with the version being released.
+- Actions are pinned by commit SHA, with Dependabot keeping them current.
+- The run ledger persists to an orphan branch, so a run's audit trail outlives
+  the runner it happened on.
+- An escalation now carries the engine's own account of the turn, which is what
+  made the two blockers above diagnosable at all.
+
 ## v0.1.5
 
 Supersedes v0.1.4, which was tagged from the wrong commit and is retracted in
