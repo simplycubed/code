@@ -63,6 +63,73 @@ func promptBuilder(gateCmd string) func(domain.Role, domain.Issue) string {
 	}
 }
 
+var closesRE = regexp.MustCompile(`(?i)closes\s+#(\d+)`)
+
+// resolveIssue extracts the linked issue number from a pull-request title of the
+// form "Closes #N: ...", the shape openPR writes. It returns 0 when there is no
+// such reference, in which case state labels go on the pull request itself.
+func resolveIssue(title string) int {
+	m := closesRE.FindStringSubmatch(title)
+	if m == nil {
+		return 0
+	}
+	n, _ := strconv.Atoi(m[1])
+	return n
+}
+
+// AddressPR runs one pass of the fix-on-request loop over an open pull request:
+// it reads the human's review feedback, and if there is anything new to address,
+// syncs a worktree to the pull request's head, runs the fixer against the repo's
+// gate, and pushes the result back to the same branch.
+//
+// When there is no new feedback it returns OutcomeNoFeedback without touching the
+// repo: a clean no-op, not a stall and not an error.
+func AddressPR(ctx context.Context, d Deps, cfg *config.Config, repo string, pr int) (loop.Result, error) {
+	prefix := cfg.LabelPrefix
+	if prefix == "" {
+		prefix = config.DefaultLabelPrefix
+	}
+
+	fb, err := d.Forge.Feedback(ctx, repo, pr)
+	if err != nil {
+		return loop.Result{}, fmt.Errorf("app: read feedback: %w", err)
+	}
+	if !fb.HasFeedback() {
+		return loop.Result{Outcome: loop.OutcomeNoFeedback}, nil
+	}
+
+	// The worktree is created off the repo's current HEAD (always a valid ref) and
+	// then hard-synced to the pull request's pushed head. The starting ref is
+	// throwaway: Sync is what makes the tree correct, whether Add created a fresh
+	// worktree or returned one a prior run left behind. Editing a stale tree and
+	// pushing would clobber the pushed state the reviewer is looking at, so Sync
+	// is mandatory, not an optimization.
+	wt, err := d.Worktrees.Add(ctx, fb.Branch, "HEAD")
+	if err != nil {
+		return loop.Result{}, fmt.Errorf("app: prepare worktree: %w", err)
+	}
+	if d.VCS != nil {
+		if err := d.VCS.Sync(ctx, wt, fb.Branch); err != nil {
+			return loop.Result{}, fmt.Errorf("app: sync worktree to PR head: %w", err)
+		}
+	}
+
+	eng := &loop.Engine{
+		Runner: d.Runner,
+		Gate:   func(ctx context.Context, dir string) gate.Result { return gate.Run(ctx, dir, cfg.Gate) },
+		Forge:  d.Forge,
+		VCS:    d.VCS,
+		Cfg:    loop.Config{WorkDir: wt, Branch: fb.Branch, LabelPrefix: prefix, Attribute: cfg.Attribution},
+	}
+	return eng.Fix(ctx, loop.FixRequest{
+		Repo:   repo,
+		PR:     pr,
+		Issue:  resolveIssue(fb.Title),
+		Branch: fb.Branch,
+		Prompt: roles.AssembleFix(fb, cfg.Gate),
+	})
+}
+
 // Run onboards a worktree for the issue and runs the loop against cfg.Gate. base
 // is the ref the worktree branches from (for example "origin/main").
 func Run(ctx context.Context, d Deps, cfg *config.Config, iss domain.Issue, base string) (loop.Result, error) {

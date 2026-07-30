@@ -10,10 +10,13 @@ package gh
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"strconv"
 	"strings"
+
+	"github.com/simplycubed/code/internal/domain"
 )
 
 // Forge drives GitHub via the gh CLI.
@@ -25,6 +28,11 @@ type Forge struct {
 	// other than the label being set, so exactly one state label remains on the
 	// issue. GitHub does not enforce that; this does.
 	StateLabels []string
+	// Self is the agent's own GitHub login (for example "simplycubed-code[bot]").
+	// When set, review feedback authored by it is excluded from Feedback, so the
+	// fixer never treats the agent's own output as work to do. Empty disables the
+	// author filter (used for local runs); freshness still bounds the result.
+	Self string
 }
 
 func (f *Forge) bin() string {
@@ -70,6 +78,109 @@ func (f *Forge) SetState(ctx context.Context, repo string, issue int, label stri
 func (f *Forge) Comment(ctx context.Context, repo string, issue int, body string) error {
 	_, err := f.run(ctx, "issue", "comment", strconv.Itoa(issue), "--repo", repo, "--body", body)
 	return err
+}
+
+// CommentPR posts a comment on a pull request.
+func (f *Forge) CommentPR(ctx context.Context, repo string, pr int, body string) error {
+	_, err := f.run(ctx, "pr", "comment", strconv.Itoa(pr), "--repo", repo, "--body", body)
+	return err
+}
+
+// prMeta is the pull-request head and title, read once so feedback can be
+// filtered to the current head commit.
+type prMeta struct {
+	HeadRefName string `json:"headRefName"`
+	HeadRefOid  string `json:"headRefOid"`
+	Title       string `json:"title"`
+}
+
+type ghReview struct {
+	User     struct{ Login string } `json:"user"`
+	Body     string                 `json:"body"`
+	State    string                 `json:"state"`
+	CommitID string                 `json:"commit_id"`
+}
+
+type ghReviewComment struct {
+	User     struct{ Login string } `json:"user"`
+	Body     string                 `json:"body"`
+	Path     string                 `json:"path"`
+	Line     int                    `json:"line"`
+	OrigLine int                    `json:"original_line"`
+	CommitID string                 `json:"commit_id"`
+}
+
+// Feedback gathers the actionable human review on a pull request. "Actionable"
+// means left against the current head commit (so already-addressed feedback on an
+// earlier commit falls away once the fixer pushes) and not authored by the agent
+// itself. Two GitHub surfaces are read: review summaries (the /reviews endpoint)
+// and inline comments (the /comments endpoint).
+func (f *Forge) Feedback(ctx context.Context, repo string, pr int) (domain.ReviewFeedback, error) {
+	metaOut, err := f.run(ctx, "pr", "view", strconv.Itoa(pr), "--repo", repo,
+		"--json", "headRefName,headRefOid,title")
+	if err != nil {
+		return domain.ReviewFeedback{}, err
+	}
+	var meta prMeta
+	if err := json.Unmarshal([]byte(metaOut), &meta); err != nil {
+		return domain.ReviewFeedback{}, fmt.Errorf("gh pr view: parse: %w", err)
+	}
+	fb := domain.ReviewFeedback{PR: pr, Branch: meta.HeadRefName, HeadSHA: meta.HeadRefOid, Title: meta.Title}
+
+	reviewsOut, err := f.run(ctx, "api", fmt.Sprintf("repos/%s/pulls/%d/reviews", repo, pr), "--paginate")
+	if err != nil {
+		return domain.ReviewFeedback{}, err
+	}
+	var reviews []ghReview
+	if err := json.Unmarshal([]byte(reviewsOut), &reviews); err != nil {
+		return domain.ReviewFeedback{}, fmt.Errorf("gh api reviews: parse: %w", err)
+	}
+	for _, r := range reviews {
+		if !f.actionable(r.User.Login, r.CommitID, meta.HeadRefOid) {
+			continue
+		}
+		if r.State != "CHANGES_REQUESTED" && r.State != "COMMENTED" {
+			continue
+		}
+		if strings.TrimSpace(r.Body) == "" {
+			continue // a review whose content is only inline comments; captured below
+		}
+		fb.Notes = append(fb.Notes, domain.ReviewNote{Author: r.User.Login, Body: strings.TrimSpace(r.Body)})
+	}
+
+	commentsOut, err := f.run(ctx, "api", fmt.Sprintf("repos/%s/pulls/%d/comments", repo, pr), "--paginate")
+	if err != nil {
+		return domain.ReviewFeedback{}, err
+	}
+	var comments []ghReviewComment
+	if err := json.Unmarshal([]byte(commentsOut), &comments); err != nil {
+		return domain.ReviewFeedback{}, fmt.Errorf("gh api comments: parse: %w", err)
+	}
+	for _, c := range comments {
+		if !f.actionable(c.User.Login, c.CommitID, meta.HeadRefOid) {
+			continue
+		}
+		line := c.Line
+		if line == 0 {
+			line = c.OrigLine
+		}
+		fb.Notes = append(fb.Notes, domain.ReviewNote{
+			Author: c.User.Login, File: c.Path, Line: line, Body: strings.TrimSpace(c.Body),
+		})
+	}
+	return fb, nil
+}
+
+// actionable reports whether a piece of feedback should be addressed: it must be
+// left against the current head commit and not authored by the agent itself.
+func (f *Forge) actionable(author, commitID, headSHA string) bool {
+	if commitID != headSHA {
+		return false
+	}
+	if f.Self != "" && author == f.Self {
+		return false
+	}
+	return true
 }
 
 func lastNonEmptyLine(s string) string {

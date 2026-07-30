@@ -6,7 +6,7 @@ An autonomous coding agent that lives inside your own GitHub. You file an issue,
 
 ## What it is
 
-SimplyCubed Code turns a GitHub issue into a reviewed pull request without a person writing the code. A human files an issue describing the change. The agent implements it, a separate read-only reviewer role checks the work, a fixer addresses whatever the review turns up, and a pull request goes out for a human to merge.
+SimplyCubed Code turns a GitHub issue into a pull request without a person writing the code. A human files an issue describing the change; the agent implements it against the repo's own quality gate and opens a pull request for a human to merge. When a human then requests changes on that pull request, a fixer role reads the feedback, addresses it, re-runs the gate, and pushes back to the same branch for another look.
 
 It proposes. It does not dispose. The agent never pushes to `main` and never merges its own work. A person is always the one who clicks merge.
 
@@ -17,10 +17,12 @@ The part that makes it different from hosted coding agents is where it runs. Eve
 The loop is issue to pull request, driven entirely through GitHub.
 
 1. A human files an issue and applies the `sc:go` label. That label is the only thing a person applies to start the work.
-2. The agent picks up the issue, implements the change on a branch, and runs the repo's own quality gate.
-3. A read-only reviewer role reviews the diff. A fixer role addresses the findings and runs the gate again.
-4. Once the gate passes, the agent opens a pull request and hands it back to a human.
-5. A human reviews and merges. The agent does not.
+2. The agent implements the change on a branch and runs the repo's own quality gate, using the gate's output to guide each retry until it passes or it stops and asks for a human.
+3. Once the gate passes, the agent opens a pull request and hands it back to a human.
+4. A human reviews. If they request changes, a fixer role reads the feedback, makes the changes, re-runs the gate, and pushes back to the same pull request for another look. Only feedback left against the current head is addressed, so the loop never re-litigates a comment it already handled.
+5. A human merges. The agent does not.
+
+A separate read-only reviewer role is defined in the code but is not yet wired into the loop, so today the review in step 4 is the human's. The roadmap below tracks it.
 
 ### Label lifecycle
 
@@ -70,6 +72,14 @@ gate: make check
 
 The `gate` command is required. It is whatever your repo already runs to know a change is good, typically a typecheck, your tests, and a build, the same thing your CI runs. The agent cannot declare a change done until the gate passes.
 
+By default the commits and pull requests the agent generates carry a "SimplyCubed Code" marker: a `Co-Authored-By` trailer on the commit and a footer line on the pull-request body, the same convention Claude Code uses for its own commits. To turn it off, set `attribution: false`:
+
+```yaml
+gate: make check
+
+attribution: false
+```
+
 A repo with no gate is refused, on purpose. An agent loop with nothing to stop it will wander, break things, and still report success. The gate is the safety mechanism, so the tool treats its absence as a configuration error rather than a default to paper over. The engineering that matters here is the gate, not the loop.
 
 ## Engines
@@ -80,13 +90,15 @@ The first engine adapter targets the Codex CLI running against Azure OpenAI (GPT
 
 ## Status
 
-Beta, and honest about it. The core issue-to-pull-request flow runs end to end (via the CLI, with the Codex-on-Azure engine), but there is no stable release yet and you should expect rough edges.
+Beta, and honest about it. Two loops run end to end via the CLI on the Codex-on-Azure engine: issue to pull request, and fix-on-request (a human requests changes, the fixer addresses them and pushes back). There is no stable release yet and you should expect rough edges.
 
 Roadmap, roughly in order:
 
-- The core issue-to-pull-request loop with the reviewer and fixer roles.
+- The issue-to-pull-request loop. **Done.**
+- The fix-on-request loop: a human requests changes, a fixer role addresses them. **Done.**
+- Wiring the read-only reviewer role into the loop so a diff is reviewed before it reaches a human.
 - The self-onboarding flow via bootstrap issue and setup pull requests.
-- The Codex on Azure OpenAI engine adapter.
+- The Codex on Azure OpenAI engine adapter. **Done.**
 - The Claude Code engine adapter.
 
 If you are evaluating this for real work today, the honest answer is to watch the repo and check back. It is not ready.

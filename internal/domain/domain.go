@@ -11,6 +11,10 @@ const (
 	RoleImplementer Role = "implementer"
 	// RoleReviewer reads a diff and emits a Verdict. It never edits.
 	RoleReviewer Role = "reviewer"
+	// RoleFixer edits code on an open pull request to address a human's requested
+	// changes, then runs the gate. Like the implementer, it may edit; unlike it,
+	// its input is review feedback on an existing branch rather than an issue.
+	RoleFixer Role = "fixer"
 )
 
 // Issue is the unit of work: a GitHub issue the loop acts on.
@@ -40,6 +44,32 @@ type RunResult struct {
 	FilesTouched []string
 	Err          error
 }
+
+// ReviewFeedback is the human review on an open pull request that the fixer role
+// is asked to address. It is gathered from GitHub by the forge. Notes carries
+// only actionable feedback on the current head; the forge filters out stale
+// feedback (left against an earlier commit) and the agent's own output, so an
+// empty Notes means there is nothing new to do.
+type ReviewFeedback struct {
+	PR      int
+	Branch  string // pull-request head branch, the branch the fixer pushes to
+	HeadSHA string // current head commit; feedback is actionable only at this SHA
+	Title   string // pull-request title, used to resolve the linked issue
+	Notes   []ReviewNote
+}
+
+// ReviewNote is one piece of human feedback: a review summary or an inline
+// comment. Its text is untrusted input (a human wrote it) and is delimited as
+// data when handed to the model, never as instructions.
+type ReviewNote struct {
+	Author string
+	File   string // "" for a pull-request-level review summary
+	Line   int
+	Body   string
+}
+
+// HasFeedback reports whether there is any actionable note to address.
+func (r ReviewFeedback) HasFeedback() bool { return len(r.Notes) > 0 }
 
 // Severity ranks a reviewer finding.
 type Severity string

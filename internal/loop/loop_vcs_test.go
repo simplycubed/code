@@ -11,18 +11,28 @@ import (
 )
 
 type fakeVCS struct {
-	committed  bool
-	commitDone bool
-	pushDone   bool
+	committed    bool
+	commitDone   bool
+	pushDone     bool
+	pushedBranch string
+	syncedBranch string
+	commitMsg    string
 }
 
-func (f *fakeVCS) Commit(_ context.Context, _, _ string) (bool, error) {
+func (f *fakeVCS) Commit(_ context.Context, _, msg string) (bool, error) {
 	f.commitDone = true
+	f.commitMsg = msg
 	return f.committed, nil
 }
 
-func (f *fakeVCS) Push(_ context.Context, _, _ string) error {
+func (f *fakeVCS) Push(_ context.Context, _, branch string) error {
 	f.pushDone = true
+	f.pushedBranch = branch
+	return nil
+}
+
+func (f *fakeVCS) Sync(_ context.Context, _, branch string) error {
+	f.syncedBranch = branch
 	return nil
 }
 

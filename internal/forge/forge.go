@@ -8,7 +8,11 @@
 // request.
 package forge
 
-import "context"
+import (
+	"context"
+
+	"github.com/simplycubed/code/internal/domain"
+)
 
 // Forge is the subset of GitHub operations the loop performs.
 type Forge interface {
@@ -19,4 +23,12 @@ type Forge interface {
 	SetState(ctx context.Context, repo string, issue int, label string) error
 	// Comment posts a comment on an issue.
 	Comment(ctx context.Context, repo string, issue int, body string) error
+	// Feedback returns the actionable human review feedback on a pull request:
+	// only feedback left against the current head, with the agent's own output
+	// filtered out. An empty ReviewFeedback.Notes means there is nothing new to
+	// address.
+	Feedback(ctx context.Context, repo string, pr int) (domain.ReviewFeedback, error)
+	// CommentPR posts a comment on a pull request. It is distinct from Comment
+	// because pull requests and issues are different surfaces to the GitHub CLI.
+	CommentPR(ctx context.Context, repo string, pr int, body string) error
 }
