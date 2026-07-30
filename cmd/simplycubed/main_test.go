@@ -539,3 +539,62 @@ func TestDispatch(t *testing.T) {
 		})
 	}
 }
+
+func TestPrepare(t *testing.T) {
+	repoWithConfig := func(t *testing.T) string {
+		t.Helper()
+		dir := t.TempDir()
+		path := filepath.Join(dir, ".github", "simplycubed.yml")
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("gate: make check\nlabelPrefix: sc\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return dir
+	}
+
+	t.Run("builds the dependency graph and returns the positional arguments", func(t *testing.T) {
+		t.Setenv("AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
+		t.Setenv("AZURE_OPENAI_API_KEY", "k")
+		repo := repoWithConfig(t)
+		c, rest, err := prepare("run", []string{"--repo-dir", repo, "--state-dir", t.TempDir(), "o/r#1"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if c.repoDir != repo || c.cfg.Gate != "make check" {
+			t.Fatalf("flags = %+v, cfg.Gate = %q", c, c.cfg.Gate)
+		}
+		if len(rest) != 1 || rest[0] != "o/r#1" {
+			t.Fatalf("positionals = %v, want [o/r#1]", rest)
+		}
+		if c.deps.Runner == nil || c.deps.Forge == nil || c.deps.VCS == nil || c.deps.Worktrees == nil {
+			t.Fatalf("dependency graph is incomplete: %+v", c.deps)
+		}
+	})
+
+	// prepare is the common entry path, so each way the environment is wrong
+	// has to stop here rather than surface later as an engine failure.
+	t.Run("refuses a repo with no config", func(t *testing.T) {
+		t.Setenv("AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
+		t.Setenv("AZURE_OPENAI_API_KEY", "k")
+		if _, _, err := prepare("run", []string{"--repo-dir", t.TempDir()}); err == nil {
+			t.Fatal("expected an error for a repo with no config")
+		}
+	})
+
+	t.Run("refuses a missing engine key", func(t *testing.T) {
+		t.Setenv("AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
+		t.Setenv("AZURE_OPENAI_API_KEY", "")
+		_, _, err := prepare("run", []string{"--repo-dir", repoWithConfig(t)})
+		if err == nil || !strings.Contains(err.Error(), "AZURE_OPENAI_API_KEY") {
+			t.Fatalf("err = %v, want the key named", err)
+		}
+	})
+
+	t.Run("rejects an unknown flag", func(t *testing.T) {
+		if _, _, err := prepare("run", []string{"--nope"}); err == nil {
+			t.Fatal("expected an error for an unknown flag")
+		}
+	})
+}
