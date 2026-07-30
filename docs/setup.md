@@ -1,80 +1,157 @@
-# Setup: pointing the engine at a model
+# Setup
 
-The engine needs a few values to talk to a model provider. The first engine
-adapter targets the OpenAI Codex CLI against Azure OpenAI (see
-[ADR 0003](decisions/0003-codex-azure-first-engine.md)). Wiring these values into
-the code waits on the S3 replay spike, so for now this is a reference for running
-that spike rather than a config path the product reads on its own.
+This is the adopter path that exists today: install the CLI, write the repo
+config and caller workflow into your own repository, set the Azure values in the
+right places, and let GitHub Actions drive issues to pull requests.
 
-## What the Azure engine needs
+## Quickstart
 
-Three non-secret values and one secret.
+Prerequisites:
 
-| Input                        | What it is                                                                                   | Secret? |
-| ---------------------------- | -------------------------------------------------------------------------------------------- | ------- |
-| Resource name                | The `<name>` in `https://<name>.openai.azure.com`                                            | No      |
-| GPT-5.4 deployment name      | The deployment you created for the full model (the name is yours, not necessarily `gpt-5.4`) | No      |
-| GPT-5.4-mini deployment name | The deployment for the small model                                                           | No      |
-| `AZURE_OPENAI_API_KEY`       | The resource key                                                                             | Yes     |
+- Go installed locally so you can run `go install`.
+- `gh` authenticated against the repository you want to onboard.
+- Write access on that repository.
+- An Azure OpenAI endpoint and API key.
 
-The Codex CLI is configured for Azure like this (base URL includes `/openai/v1`,
-key read from the environment by name, Responses wire API):
+1. Install the CLI:
 
-```toml
-model = "<gpt-5.4 deployment name>"
-model_provider = "azure"
-
-[model_providers.azure]
-name = "Azure OpenAI"
-base_url = "https://<resource>.openai.azure.com/openai/v1"
-env_key = "AZURE_OPENAI_API_KEY"
-wire_api = "responses"
+```sh
+go install github.com/simplycubed/code/cmd/simplycubed@v0.1.1
+simplycubed version
 ```
 
-## Where the key must live depends on where the engine runs
+2. In the target repository, generate the starter files and labels:
 
-This distinction matters and is easy to get wrong.
+```sh
+simplycubed init --workflow
+```
 
-- **In production (GitHub Actions runtime):** the key belongs in a repository or
-  environment **secret** named `AZURE_OPENAI_API_KEY`. A workflow reads it and
-  passes it to the job. This is the right home for the deployed product.
-- **For a local run or the validation spike:** a repository secret is **not**
-  visible to a local shell. The key must be in the local environment where
-  `codex` runs. Keep it out of your shell profile and out of any repo: put it in
-  a local, git-ignored env file and source it only for the run.
+That writes `.github/simplycubed.yml`, writes `.github/workflows/simplycubed.yml`,
+and creates the `sc:*` labels through your local `gh` auth. The files are local
+changes in your repository; nothing is merged or installed remotely for you.
 
-In both cases the key is referenced by name; the value never goes in a config
-file or the repository.
+3. Edit `.github/simplycubed.yml` and set a real gate that is already green on
+your default branch. A minimal example is:
 
-## Where the config lives when the engine runs in GitHub Actions
+```yaml
+labelPrefix: sc
+gate: make check
+```
 
-A GitHub Actions runner is ephemeral, so there is no persistent home directory to
-hold a `config.toml`. The config is generated per job instead, from three
-sources, and the key never sits in the repository.
+### Run it locally first
 
-- **Non-secret settings** (endpoint, deployment names, the provider block,
-  `wire_api`) come from `.github/simplycubed.yml`, and where useful from
-  repository or organization Variables. These are committed and safe to read.
-- **The key** (`AZURE_OPENAI_API_KEY`) is a GitHub Actions secret, injected into
-  the job as an environment variable. The generated config references it by name
-  through `env_key`; the value is never written to a file or the repo.
-- **The `config.toml` itself** is written by the action at runtime into a
-  job-scoped `CODEX_HOME` (for example under the runner's temp directory) and
-  discarded when the job ends. It is generated, not stored.
+Before wiring Actions, you can prove the loop works from your terminal with the
+same config file:
 
-So a job reads the non-secret config, renders a `config.toml` into a temporary
-`CODEX_HOME`, runs `codex` with the key present only as an environment variable,
-and throws the config away when it finishes. Every secret stays out of the
-repository, and the config is per-adopter: each repository supplies its own
-endpoint, deployment names, and key.
+```sh
+export AZURE_OPENAI_ENDPOINT="https://<resource>.openai.azure.com"
+export AZURE_OPENAI_API_KEY="<key>"
+simplycubed run owner/repo#N --repo-dir .
+```
 
-The code that generates this config is part of the engine adapter and the Action
-packaging, which are pending the S3 spike (see
-[ADR 0003](decisions/0003-codex-azure-first-engine.md) and
-[ADR 0006](decisions/0006-runtime-and-identity.md)). This section is the intended
-design, not a description of shipped code.
+4. In the GitHub repository settings, add:
 
-## Model tiering
+- Variable: `SIMPLYCUBED_GH_APP_ID`
+- Secret: `SIMPLYCUBED_GH_APP_PRIVATE_KEY`
+- Variable: `AZURE_OPENAI_ENDPOINT`
+- Secret: `AZURE_OPENAI_API_KEY`
 
-Larger model for planning and review, mini for mechanical fixes. Per-role model
-selection is part of the engine adapter, which is pending S3.
+The Actions runtime authenticates as the `simplycubed-code` GitHub App, so the
+App ID and private key are required. Create the App with `Contents`, `Issues`,
+and `Pull requests` permissions only, webhook disabled, install visibility `Any
+account`, then install it on the repository. Store the private key as the full
+PEM contents, including the `-----BEGIN` and `-----END` lines.
+
+Each job mints its own installation token for that repository, so the agent
+authors commits, pull requests, and comments as `simplycubed-code[bot]`, and its
+pull requests receive their own CI runs. A personal access token is not an
+alternative: the reusable workflow accepts App credentials only.
+
+5. Commit the generated config and workflow files in the target repository, open
+a setup pull request, and merge it yourself. Setup files are written locally by
+`simplycubed init` and merged by a human, because the runtime holds no
+`workflows` permission and cannot add its own workflow files.
+
+6. File an issue that describes a small change and apply the `sc:go` label.
+
+7. Wait for the workflow to open a pull request. Review it like any other PR:
+
+- Merge it yourself if it is good.
+- Or request changes; the fixer loop will address feedback on the current head
+  and push back to the same branch.
+
+That is the first end-to-end path: issue -> PR -> human merge.
+
+## Azure values
+
+The shipped Codex-on-Azure setup needs these values:
+
+| Name | Where it is used | Secret? |
+| --- | --- | --- |
+| `AZURE_OPENAI_ENDPOINT` | Base Azure OpenAI endpoint, for example `https://<resource>.openai.azure.com` | No |
+| `AZURE_OPENAI_API_KEY` | Azure OpenAI API key | Yes |
+| model or deployment name | Optional override passed as `--model` locally or `model:` in the caller workflow | No |
+
+If you do not set a model override, the CLI and reusable workflow default to
+`gpt-5.4`.
+
+## Where the key lives
+
+The API key lives in different places depending on where `simplycubed` runs.
+
+- Local CLI run: export `AZURE_OPENAI_API_KEY` in the shell that runs
+  `simplycubed`. Do not commit it, and do not expect a GitHub repository secret
+  to appear in your local terminal.
+- GitHub Actions run: store `AZURE_OPENAI_API_KEY` as a repository secret. The
+  caller workflow passes it into the reusable workflow job as an environment
+  variable.
+
+In both cases the config references the key by environment variable name. The
+key value does not belong in `.github/simplycubed.yml` or any committed file.
+
+## Local CLI vs GitHub Actions
+
+Use the same endpoint and key in both places, but wire them differently.
+
+### Local CLI
+
+For local runs such as `simplycubed run owner/repo#123`, the CLI reads:
+
+- `AZURE_OPENAI_ENDPOINT` from your shell environment.
+- `AZURE_OPENAI_API_KEY` from your shell environment.
+- The repo gate and label prefix from `.github/simplycubed.yml`.
+
+Example:
+
+```sh
+export AZURE_OPENAI_ENDPOINT="https://<resource>.openai.azure.com"
+export AZURE_OPENAI_API_KEY="<key>"
+simplycubed run owner/repo#123 --repo-dir .
+```
+
+### GitHub Actions
+
+For the hosted-in-your-GitHub path, the caller workflow in your repository
+passes:
+
+- `vars.AZURE_OPENAI_ENDPOINT` to the reusable workflow input
+  `azure-openai-endpoint`.
+- `secrets.AZURE_OPENAI_API_KEY` to the reusable workflow secret
+  `azure-openai-api-key`.
+- `vars.SIMPLYCUBED_GH_APP_ID` to the reusable workflow input `github-app-id`.
+- `secrets.SIMPLYCUBED_GH_APP_PRIVATE_KEY` to the reusable workflow secret
+  `github-app-private-key`.
+
+The reusable workflow installs the CLI, exports the endpoint and key for the job,
+and runs `simplycubed run` or `simplycubed address`.
+
+## Optional model override
+
+If your Azure deployment name is not `gpt-5.4`, set it explicitly.
+
+- Local CLI: pass `--model <deployment-name>`.
+- GitHub Actions: uncomment and set `model:` in
+  `.github/workflows/simplycubed.yml`.
+
+The current shipped workflow uses one model value per run. Per-role model
+tiering is not wired yet.
