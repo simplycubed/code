@@ -149,6 +149,21 @@ func engineEnv() (string, error) {
 	return endpoint, nil
 }
 
+// newVCS builds the git layer with a committer identity. A GitHub Actions
+// runner has none configured, so without this a commit fails with "Author
+// identity unknown" after the change is already made and the gate has passed.
+// The identity is the credential's own login, so commits are attributable to
+// whoever the run authenticated as.
+func newVCS(self string) *vcsgit.Git {
+	if self == "" {
+		return &vcsgit.Git{}
+	}
+	return &vcsgit.Git{
+		AuthorName:  self,
+		AuthorEmail: fmt.Sprintf("%s@users.noreply.github.com", strings.ReplaceAll(self, "[bot]", "")),
+	}
+}
+
 // newRunner builds the engine runner, honouring SIMPLYCUBED_SANDBOX.
 //
 // The default sandbox (workspace-write) uses bubblewrap on Linux, which cannot
@@ -274,7 +289,7 @@ func prepare(name string, argv []string) (*commonFlags, []string, error) {
 		// Self, when set, filters the agent's own review feedback out of the fix
 		// loop. Empty for local runs, where the operator is a human, not the bot.
 		Forge:     forge,
-		VCS:       &vcsgit.Git{},
+		VCS:       newVCS(forge.Self),
 		Worktrees: &worktree.Manager{RepoDir: *repoDir, BaseDir: filepath.Join(*stateDir, "worktrees")},
 	}
 	return &commonFlags{repoDir: *repoDir, base: *base, actor: *actor, cfg: cfg, deps: deps}, rest, nil
