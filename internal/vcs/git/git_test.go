@@ -56,11 +56,18 @@ func TestCommitReportsWhetherAnythingChanged(t *testing.T) {
 	}
 
 	// Only scratch present (no real change): still a no-op, because scratch is
-	// excluded. This is what stops an empty run from opening a PR.
+	// excluded. This is what stops an empty run from opening a PR. The .gopath
+	// module cache is what a live run actually leaked (empty .lock files).
 	if err := os.MkdirAll(filepath.Join(work, ".gocache"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(work, ".gocache", "junk"), []byte("cache"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(work, ".gopath", "pkg", "mod", "cache", "download"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(work, ".gopath", "pkg", "mod", "cache", "download", "v1.0.0.lock"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	committed, err = g.Commit(ctx, work, "scratch only")
@@ -82,6 +89,9 @@ func TestCommitReportsWhetherAnythingChanged(t *testing.T) {
 	}
 	if strings.Contains(tracked, ".gocache") {
 		t.Fatalf(".gocache must never be committed: %s", tracked)
+	}
+	if strings.Contains(tracked, ".gopath") {
+		t.Fatalf(".gopath must never be committed: %s", tracked)
 	}
 }
 

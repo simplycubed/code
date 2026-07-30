@@ -18,10 +18,10 @@ type Git struct {
 	Bin string
 	// Remote is the push remote; defaults to "origin".
 	Remote string
-	// ScratchPaths are worktree-relative paths of transient agent scratch (a
-	// build cache the engine writes inside the worktree). They are removed before
-	// staging so they never land in a commit. Defaults to .gocache and
-	// .simplycubed.
+	// ScratchPaths are worktree-relative paths of transient agent scratch (build
+	// and module caches the engine writes inside the worktree). They are removed
+	// before staging so they never land in a commit. Defaults to .gocache,
+	// .gopath, and .simplycubed.
 	ScratchPaths []string
 }
 
@@ -29,7 +29,7 @@ func (g *Git) scratchPaths() []string {
 	if g.ScratchPaths != nil {
 		return g.ScratchPaths
 	}
-	return []string{".gocache", ".simplycubed"}
+	return []string{".gocache", ".gopath", ".simplycubed"}
 }
 
 func (g *Git) bin() string {
