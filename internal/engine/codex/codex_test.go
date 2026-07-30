@@ -129,3 +129,33 @@ func TestRunRequiresCodexHome(t *testing.T) {
 		t.Fatal("expected an error when CodexHome is unset")
 	}
 }
+
+// The engine turn never needs a GitHub credential: only the CLI's own forge
+// calls do. Handing one to the model's shell would put a token that can write to
+// the repository within reach of anything injected through an issue body.
+func TestRunDoesNotGiveTheEngineAGitHubToken(t *testing.T) {
+	t.Setenv("GH_TOKEN", "ghs_secret")
+	t.Setenv("GITHUB_TOKEN", "ghs_secret")
+	bin := writeFakeCodex(t, `#!/bin/sh
+out=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -o) out="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+[ -n "$out" ] && printf '%s|%s' "$GH_TOKEN" "$GITHUB_TOKEN" > "$out"
+exit 0
+`)
+	r := New(t.TempDir())
+	r.Bin = bin
+	res, err := r.Run(context.Background(), domain.RunRequest{
+		Role: domain.RoleImplementer, WorkDir: t.TempDir(), Prompt: "x",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains(res.Summary, "ghs_secret") {
+		t.Fatalf("the engine must not receive a GitHub token, got: %q", res.Summary)
+	}
+}

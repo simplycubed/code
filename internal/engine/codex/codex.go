@@ -133,7 +133,7 @@ func (r *Runner) Run(ctx context.Context, req domain.RunRequest) (domain.RunResu
 // scratch-exclusion list, so pre-configuring them here keeps the sandbox working
 // AND keeps the caches at known paths a commit can never pick up.
 func (r *Runner) childEnv(workDir string) []string {
-	env := filterEnvKeys(os.Environ(), "GOCACHE", "GOPATH", "CODEX_HOME")
+	env := filterEnvKeys(os.Environ(), "GOCACHE", "GOPATH", "CODEX_HOME", "GH_TOKEN", "GITHUB_TOKEN")
 	env = append(env, r.ExtraEnv...)
 	if !hasEnvKey(r.ExtraEnv, "GOCACHE") {
 		gc := filepath.Join(workDir, ".gocache")

@@ -24,6 +24,38 @@ That permission set also means the App cannot push edits under
 `.github/workflows/`. When a change needs a workflow-file edit, make that commit
 as a human or run the CLI locally under your own `gh` auth instead of the App.
 
+## Why does it not use the engine's "dangerous" flags?
+
+Both engines ship an escape hatch: Codex has `--dangerously-bypass-approvals-and-sandbox`
+and a `danger-full-access` sandbox mode, and Claude Code has
+`--dangerously-skip-permissions`. SimplyCubed Code does not set any of them for
+you, and the reason is worth stating plainly because reaching for them is
+tempting.
+
+Both vendors put "dangerous" in the name deliberately. Codex's own help says its
+bypass is "intended solely for running in environments that are externally
+sandboxed". A GitHub Actions runner is ephemeral, which protects the machine,
+but the things worth protecting are inside it: the model provider key, and
+whatever else the job holds. Ephemerality does not undo an exfiltrated secret.
+
+The distinction that decides it is between a person running the CLI at their own
+desk and an unattended Action running a model. In the first case a human is
+present, watching, and can interrupt. In the second there is nobody, the trigger
+is an issue body that anyone with access to the tracker can write, and the run
+happens whether or not it is going well. That is the case that needs *more*
+constraint, not less, and a product that sells human-in-the-loop should not
+disable a safety control on the operator's behalf to make an unattended run
+convenient.
+
+So when a change cannot be made under the constraints the runtime accepts, the
+run stops and a human does it. That is not a gap in the design; it is the
+design. The same rule already applies to workflow files, which the App
+deliberately cannot push.
+
+`SIMPLYCUBED_SANDBOX` exists as a knob so an adopter who has genuinely
+externally sandboxed their runners can widen it themselves, with their eyes
+open. Nothing in this repository sets it.
+
 ## Are the `sc:` labels created for me?
 
 Not automatically, yet. For now the labels are created once when you onboard a
