@@ -16,7 +16,7 @@ Prerequisites:
 1. Install the CLI:
 
 ```sh
-go install github.com/simplycubed/code/cmd/simplycubed@v0.1.1
+go install github.com/simplycubed/code/cmd/simplycubed@v0.1.2
 simplycubed version
 ```
 

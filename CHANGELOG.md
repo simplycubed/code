@@ -3,6 +3,29 @@
 All notable changes are recorded here and summarized again in the matching
 GitHub release notes for each tag.
 
+## v0.1.2
+
+**Breaking (GitHub Actions runtime only):** the reusable workflow now
+authenticates as the `simplycubed-code` GitHub App and no longer accepts the
+`gh-token` personal-access-token secret. Callers moving from `v0.1.1` must
+create and install the App, then supply `github-app-id` and
+`github-app-private-key`. Callers pinned at `v0.1.1` are unaffected until they
+bump. The local CLI path is unchanged and needs no App.
+
+- GitHub App identity: each job mints its own installation token scoped to the
+  current repository with contents, issues, and pull-requests permissions only,
+  and verifies in the run log that it cannot reach Actions administration. The
+  agent authors commits, pull requests, and comments as `simplycubed-code[bot]`,
+  and its pull requests receive their own CI runs (which a `GITHUB_TOKEN`-
+  authored pull request never does).
+- ADR 0006's open one-App-versus-two question is decided: one App carries every
+  role, with per-job token scoping for least privilege.
+- Adopter docs rewritten around the shipped install path, including a
+  local-CLI-first quickstart, and corrected to state plainly that the runtime
+  holds no `workflows` permission and cannot add its own workflow files.
+- Coverage reporting: the gate now runs tests with `-race` and writes a
+  coverage profile, uploaded to Codecov from CI.
+
 ## v0.1.1
 
 - Reusable GitHub Actions workflow: run the issue-to-PR and fix-on-request
