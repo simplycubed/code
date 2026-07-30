@@ -51,6 +51,20 @@ func (f *Forge) run(ctx context.Context, args ...string) (string, error) {
 	return string(out), nil
 }
 
+// runJSON runs gh capturing stdout only, so a notice gh prints to stderr (a
+// deprecation, an auth or rate-limit warning) never contaminates the JSON that
+// stdout is expected to carry. On failure it surfaces stderr in the error.
+func (f *Forge) runJSON(ctx context.Context, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, f.bin(), args...)
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("gh %s: %w: %s", args[0], err, strings.TrimSpace(stderr.String()))
+	}
+	return []byte(stdout.String()), nil
+}
+
 // OpenPR creates a pull request from an already-pushed head branch and returns
 // its URL. See the package doc: the branch must exist on the remote first.
 func (f *Forge) OpenPR(ctx context.Context, repo, branch, title, body string) (string, error) {
@@ -110,30 +124,48 @@ type ghReviewComment struct {
 	CommitID string                 `json:"commit_id"`
 }
 
+// paginate fetches every page of a gh api array endpoint as one flat slice. It
+// uses `--paginate --slurp`: plain `--paginate` concatenates the per-page arrays
+// into invalid JSON (`[...][...]`), while `--slurp` returns a single array whose
+// elements are the per-page arrays, which are flattened here. Without this, any
+// pull request with more than one page of reviews or comments would fail to
+// parse.
+func paginate[T any](ctx context.Context, f *Forge, endpoint string) ([]T, error) {
+	out, err := f.runJSON(ctx, "api", endpoint, "--paginate", "--slurp")
+	if err != nil {
+		return nil, err
+	}
+	var pages [][]T
+	if err := json.Unmarshal(out, &pages); err != nil {
+		return nil, fmt.Errorf("parse: %w", err)
+	}
+	var all []T
+	for _, p := range pages {
+		all = append(all, p...)
+	}
+	return all, nil
+}
+
 // Feedback gathers the actionable human review on a pull request. "Actionable"
 // means left against the current head commit (so already-addressed feedback on an
 // earlier commit falls away once the fixer pushes) and not authored by the agent
 // itself. Two GitHub surfaces are read: review summaries (the /reviews endpoint)
 // and inline comments (the /comments endpoint).
 func (f *Forge) Feedback(ctx context.Context, repo string, pr int) (domain.ReviewFeedback, error) {
-	metaOut, err := f.run(ctx, "pr", "view", strconv.Itoa(pr), "--repo", repo,
+	metaOut, err := f.runJSON(ctx, "pr", "view", strconv.Itoa(pr), "--repo", repo,
 		"--json", "headRefName,headRefOid,title")
 	if err != nil {
 		return domain.ReviewFeedback{}, err
 	}
 	var meta prMeta
-	if err := json.Unmarshal([]byte(metaOut), &meta); err != nil {
+	if err := json.Unmarshal(metaOut, &meta); err != nil {
 		return domain.ReviewFeedback{}, fmt.Errorf("gh pr view: parse: %w", err)
 	}
 	fb := domain.ReviewFeedback{PR: pr, Branch: meta.HeadRefName, HeadSHA: meta.HeadRefOid, Title: meta.Title}
 
-	reviewsOut, err := f.run(ctx, "api", fmt.Sprintf("repos/%s/pulls/%d/reviews", repo, pr), "--paginate")
+	reviews, err := paginate[ghReview](ctx, f, fmt.Sprintf("repos/%s/pulls/%d/reviews", repo, pr))
 	if err != nil {
-		return domain.ReviewFeedback{}, err
-	}
-	var reviews []ghReview
-	if err := json.Unmarshal([]byte(reviewsOut), &reviews); err != nil {
-		return domain.ReviewFeedback{}, fmt.Errorf("gh api reviews: parse: %w", err)
+		return domain.ReviewFeedback{}, fmt.Errorf("gh api reviews: %w", err)
 	}
 	for _, r := range reviews {
 		if !f.actionable(r.User.Login, r.CommitID, meta.HeadRefOid) {
@@ -148,13 +180,9 @@ func (f *Forge) Feedback(ctx context.Context, repo string, pr int) (domain.Revie
 		fb.Notes = append(fb.Notes, domain.ReviewNote{Author: r.User.Login, Body: strings.TrimSpace(r.Body)})
 	}
 
-	commentsOut, err := f.run(ctx, "api", fmt.Sprintf("repos/%s/pulls/%d/comments", repo, pr), "--paginate")
+	comments, err := paginate[ghReviewComment](ctx, f, fmt.Sprintf("repos/%s/pulls/%d/comments", repo, pr))
 	if err != nil {
-		return domain.ReviewFeedback{}, err
-	}
-	var comments []ghReviewComment
-	if err := json.Unmarshal([]byte(commentsOut), &comments); err != nil {
-		return domain.ReviewFeedback{}, fmt.Errorf("gh api comments: parse: %w", err)
+		return domain.ReviewFeedback{}, fmt.Errorf("gh api comments: %w", err)
 	}
 	for _, c := range comments {
 		if !f.actionable(c.User.Login, c.CommitID, meta.HeadRefOid) {
