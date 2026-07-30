@@ -12,23 +12,25 @@ jobs:
     uses: simplycubed/code/.github/workflows/simplycubed.yml@v0.1.1
     with:
       ref: ${{ github.event.issue.number }}
+      github-app-id: ${{ vars.SIMPLYCUBED_GH_APP_ID }}
       issue-number: ${{ github.event.issue.number }}
       actor-login: ${{ github.event.sender.login }}
       azure-openai-endpoint: ${{ vars.AZURE_OPENAI_ENDPOINT }}
       # model: my-gpt-5-4-deployment
     secrets:
       azure-openai-api-key: ${{ secrets.AZURE_OPENAI_API_KEY }}
-      gh-token: ${{ secrets.SIMPLYCUBED_GH_TOKEN }}
+      github-app-private-key: ${{ secrets.SIMPLYCUBED_GH_APP_PRIVATE_KEY }}
 
   address:
     if: ${{ github.event_name == 'pull_request_review' }}
     uses: simplycubed/code/.github/workflows/simplycubed.yml@v0.1.1
     with:
       ref: ${{ github.event.pull_request.number }}
+      github-app-id: ${{ vars.SIMPLYCUBED_GH_APP_ID }}
       pr-number: ${{ github.event.pull_request.number }}
       actor-login: ${{ github.event.review.user.login }}
       azure-openai-endpoint: ${{ vars.AZURE_OPENAI_ENDPOINT }}
       # model: my-gpt-5-4-deployment
     secrets:
       azure-openai-api-key: ${{ secrets.AZURE_OPENAI_API_KEY }}
-      gh-token: ${{ secrets.SIMPLYCUBED_GH_TOKEN }}
+      github-app-private-key: ${{ secrets.SIMPLYCUBED_GH_APP_PRIVATE_KEY }}

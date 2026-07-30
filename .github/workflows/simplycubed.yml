@@ -7,6 +7,10 @@ on:
         description: Issue or pull request number, used for concurrency.
         required: true
         type: string
+      github-app-id:
+        description: GitHub App ID for the SimplyCubed App.
+        required: true
+        type: string
       issue-number:
         description: Issue number to run, when triggered from issues:labeled.
         default: ""
@@ -38,40 +42,73 @@ on:
     secrets:
       azure-openai-api-key:
         required: true
-      gh-token:
-        required: false
+      github-app-private-key:
+        required: true
 
 jobs:
   run:
     if: ${{ inputs['issue-number'] != '' }}
     runs-on: ubuntu-latest
     concurrency: simplycubed-${{ inputs.ref }}
-    permissions:
-      contents: write
-      issues: write
-      pull-requests: write
+    permissions: {}
     env:
-      SIMPLYCUBED_AUTH_TOKEN: ${{ secrets['gh-token'] != '' && secrets['gh-token'] || github.token }}
       AZURE_OPENAI_ENDPOINT: ${{ inputs['azure-openai-endpoint'] }}
       AZURE_OPENAI_API_KEY: ${{ secrets['azure-openai-api-key'] }}
     steps:
-      # IMPORTANT: if you set secrets.gh-token, use a dedicated non-admin machine
-      # account's PAT, never a human reviewer's PAT, because the fix loop resolves
-      # token identity and skips self-authored reviews.
-      # A GITHUB_TOKEN-authored push or pull request does not trigger downstream
-      # workflows, so without a PAT the agent can open or update a PR that never
-      # receives its own `check` run. Required checks then block the merge.
-      # Issue #31 replaces this fallback with an App token later.
+      - name: Resolve repository scope
+        id: repo
+        run: |
+          echo "owner=${GITHUB_REPOSITORY_OWNER}" >> "${GITHUB_OUTPUT}"
+          echo "name=${GITHUB_REPOSITORY#*/}" >> "${GITHUB_OUTPUT}"
+
+      - name: Mint GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ inputs['github-app-id'] }}
+          private-key: ${{ secrets['github-app-private-key'] }}
+          owner: ${{ steps.repo.outputs.owner }}
+          repositories: ${{ steps.repo.outputs.name }}
+          permission-contents: write
+          permission-issues: write
+          permission-pull-requests: write
+
+      - name: Resolve App identity
+        id: identity
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          login="$(gh api graphql -f query='query { viewer { login } }' --jq '.data.viewer.login')"
+          if [ -z "${login}" ]; then
+            echo "failed to resolve GitHub App login from installation token" >&2
+            exit 1
+          fi
+          echo "login=${login}" >> "${GITHUB_OUTPUT}"
+          echo "installation token identity is ${login}"
+
+      - name: Verify installation token permissions
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}" >/dev/null
+          gh api "repos/${GITHUB_REPOSITORY}/issues?per_page=1" >/dev/null
+          gh api "repos/${GITHUB_REPOSITORY}/pulls?per_page=1" >/dev/null
+          if gh api "repos/${GITHUB_REPOSITORY}/actions/permissions" >/dev/null 2>&1; then
+            echo "installation token unexpectedly reached Actions administration" >&2
+            exit 1
+          fi
+          echo "installation token has repo contents/issues/pull-requests access and is denied Actions administration"
+
       - name: Check out repository
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
-          token: ${{ secrets['gh-token'] != '' && secrets['gh-token'] || github.token }}
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Authorize labeler
         env:
           ACTOR_LOGIN: ${{ inputs['actor-login'] }}
-          GH_TOKEN: ${{ env.SIMPLYCUBED_AUTH_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           permission="$(gh api "repos/${GITHUB_REPOSITORY}/collaborators/${ACTOR_LOGIN}/permission" --jq .permission)" || {
             echo "actor ${ACTOR_LOGIN} is not authorized to run SimplyCubed on ${GITHUB_REPOSITORY}" >&2
@@ -100,54 +137,67 @@ jobs:
 
       - name: Run SimplyCubed
         env:
-          GH_TOKEN: ${{ env.SIMPLYCUBED_AUTH_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: simplycubed run "${GITHUB_REPOSITORY}#${{ inputs['issue-number'] }}" --model "${{ inputs.model }}" --repo-dir .
 
   address:
     if: ${{ inputs['pr-number'] != '' }}
     runs-on: ubuntu-latest
     concurrency: simplycubed-${{ inputs.ref }}
-    permissions:
-      contents: write
-      issues: write
-      pull-requests: write
+    permissions: {}
     env:
-      SIMPLYCUBED_AUTH_TOKEN: ${{ secrets['gh-token'] != '' && secrets['gh-token'] || github.token }}
-      HAS_CUSTOM_GH_TOKEN: ${{ secrets['gh-token'] != '' }}
       AZURE_OPENAI_ENDPOINT: ${{ inputs['azure-openai-endpoint'] }}
       AZURE_OPENAI_API_KEY: ${{ secrets['azure-openai-api-key'] }}
     steps:
-      # IMPORTANT: if you set secrets.gh-token, use a dedicated non-admin machine
-      # account's PAT, never a human reviewer's PAT, because the fix loop resolves
-      # token identity and skips self-authored reviews.
-      # A GITHUB_TOKEN-authored push or pull request does not trigger downstream
-      # workflows, so without a PAT the agent can open or update a PR that never
-      # receives its own `check` run. Required checks then block the merge.
-      # Issue #31 replaces this fallback with an App token later.
+      - name: Resolve repository scope
+        id: repo
+        run: |
+          echo "owner=${GITHUB_REPOSITORY_OWNER}" >> "${GITHUB_OUTPUT}"
+          echo "name=${GITHUB_REPOSITORY#*/}" >> "${GITHUB_OUTPUT}"
+
+      - name: Mint GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ inputs['github-app-id'] }}
+          private-key: ${{ secrets['github-app-private-key'] }}
+          owner: ${{ steps.repo.outputs.owner }}
+          repositories: ${{ steps.repo.outputs.name }}
+          permission-contents: write
+          permission-issues: write
+          permission-pull-requests: write
+
+      - name: Resolve App identity
+        id: identity
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          login="$(gh api graphql -f query='query { viewer { login } }' --jq '.data.viewer.login')"
+          if [ -z "${login}" ]; then
+            echo "failed to resolve GitHub App login from installation token" >&2
+            exit 1
+          fi
+          echo "login=${login}" >> "${GITHUB_OUTPUT}"
+          echo "installation token identity is ${login}"
+
+      - name: Verify installation token permissions
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}" >/dev/null
+          gh api "repos/${GITHUB_REPOSITORY}/issues?per_page=1" >/dev/null
+          gh api "repos/${GITHUB_REPOSITORY}/pulls?per_page=1" >/dev/null
+          if gh api "repos/${GITHUB_REPOSITORY}/actions/permissions" >/dev/null 2>&1; then
+            echo "installation token unexpectedly reached Actions administration" >&2
+            exit 1
+          fi
+          echo "installation token has repo contents/issues/pull-requests access and is denied Actions administration"
+
       - name: Check out repository
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
-          token: ${{ secrets['gh-token'] != '' && secrets['gh-token'] || github.token }}
-
-      - name: Resolve token identity
-        id: identity
-        env:
-          GH_TOKEN: ${{ env.SIMPLYCUBED_AUTH_TOKEN }}
-        run: |
-          login="$(gh api graphql -f query='query { viewer { login } }' --jq '.data.viewer.login' 2>/dev/null || true)"
-          if [ -z "${login}" ]; then
-            login="$(gh api user --jq .login 2>/dev/null || true)"
-          fi
-          if [ -z "${login}" ] && [ "${HAS_CUSTOM_GH_TOKEN}" = "false" ]; then
-            login="github-actions[bot]"
-          fi
-          echo "login=${login}" >> "${GITHUB_OUTPUT}"
-          if [ -n "${login}" ]; then
-            echo "token identity is ${login}"
-          else
-            echo "token identity could not be resolved"
-          fi
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Skip self-authored review
         id: self-review
@@ -166,7 +216,7 @@ jobs:
         if: ${{ steps.self-review.outputs.skip != 'true' }}
         env:
           ACTOR_LOGIN: ${{ inputs['actor-login'] }}
-          GH_TOKEN: ${{ env.SIMPLYCUBED_AUTH_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           permission="$(gh api "repos/${GITHUB_REPOSITORY}/collaborators/${ACTOR_LOGIN}/permission" --jq .permission)" || {
             echo "actor ${ACTOR_LOGIN} is not authorized to run SimplyCubed on ${GITHUB_REPOSITORY}" >&2
@@ -199,6 +249,6 @@ jobs:
       - name: Address review feedback
         if: ${{ steps.self-review.outputs.skip != 'true' }}
         env:
-          GH_TOKEN: ${{ env.SIMPLYCUBED_AUTH_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           SIMPLYCUBED_SELF_LOGIN: ${{ steps.identity.outputs.login }}
         run: simplycubed address "${GITHUB_REPOSITORY}#${{ inputs['pr-number'] }}" --model "${{ inputs.model }}" --repo-dir .

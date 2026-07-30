@@ -44,7 +44,7 @@ The whole thing runs on GitHub Actions, event-driven, with no server and no VM f
 What this buys you:
 
 - Your code stays in your repos. SimplyCubed never receives it.
-- Your model provider keys, your `GITHUB_TOKEN`, and any other secrets stay in your GitHub secret store. They are read by your own Actions runs and never transit our infrastructure.
+- Your model provider keys, the GitHub App's private key, and any other secrets stay in your GitHub secret store. They are read by your own Actions runs and never transit our infrastructure.
 - The agent holds no deploy credentials and has no path to production. The most it can do is open a pull request against a branch. A human and your branch protection rules decide what happens next.
 
 Setup files are written locally by `simplycubed init` and merged by a human, because the runtime holds no `workflows` permission and cannot add its own workflow files.
@@ -76,12 +76,24 @@ request.
 
 To run the loop inside your own GitHub Actions:
 
-1. In the adopter repo, run `simplycubed init --workflow`. That writes `.github/simplycubed.yml`, writes `.github/workflows/simplycubed.yml`, and creates the `sc:*` labels through your local `gh` auth.
-2. Fill in the real `gate:` in `.github/simplycubed.yml`.
-3. Add the repository variable `AZURE_OPENAI_ENDPOINT` and the repository secret `AZURE_OPENAI_API_KEY`.
-4. Optionally add a PAT as `SIMPLYCUBED_GH_TOKEN`. This is strongly recommended: pushes and pull requests authored with `GITHUB_TOKEN` do not trigger downstream workflows, so without a PAT the agent's PRs can miss their `check` runs and required checks block merge. If you set it, use a dedicated non-admin machine account's PAT, never a human reviewer's PAT, because the fix-on-request loop resolves the token identity and skips self-authored reviews. The reusable workflow falls back to `github.token` only when no PAT is set; issue #31 replaces this later with an App token.
+1. Create and install the GitHub App, `simplycubed-code`.
+   Repository permissions: `Contents`, `Pull requests`, and `Issues` only.
+   Do not grant `Workflows`, `Administration`, `Environments`, or `Secrets`.
+   Disable the App webhook: the App is an identity that mints per-job tokens, and there is no SimplyCubed server to receive deliveries.
+   Set install visibility to `Any account`.
+   Install it on the repo.
+2. In the adopter repo, run `simplycubed init --workflow`. That writes `.github/simplycubed.yml`, writes `.github/workflows/simplycubed.yml` pinned to a released reusable-workflow tag, and creates the `sc:*` labels through your local `gh` auth.
+3. Fill in the real `gate:` in `.github/simplycubed.yml`.
+4. Add repository variable `SIMPLYCUBED_GH_APP_ID`, repository secret `SIMPLYCUBED_GH_APP_PRIVATE_KEY`, repository variable `AZURE_OPENAI_ENDPOINT`, and repository secret `AZURE_OPENAI_API_KEY`.
+   The private key secret must be the full PEM contents, including the `-----BEGIN` and `-----END` lines.
 5. Open a setup pull request in the adopter repo and merge it yourself. Setup files are written locally by `simplycubed init` and merged by a human, because the runtime holds no `workflows` permission and cannot add its own workflow files.
 6. File an issue and apply `sc:go`. Reviews submitted on the resulting pull request call back into the same reusable workflow for the fix-on-request loop.
+
+Each reusable-workflow job mints its own installation token for the current
+repository and asks only for `contents`, `pull requests`, and `issues`. The
+workflow then probes an Actions-administration endpoint and expects a denial, so
+the run log shows the token does not carry the workflow/admin scope the App was
+deliberately denied.
 
 ## Configuration
 

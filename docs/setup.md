@@ -51,14 +51,21 @@ simplycubed run owner/repo#N --repo-dir .
 
 4. In the GitHub repository settings, add:
 
+- Variable: `SIMPLYCUBED_GH_APP_ID`
+- Secret: `SIMPLYCUBED_GH_APP_PRIVATE_KEY`
 - Variable: `AZURE_OPENAI_ENDPOINT`
 - Secret: `AZURE_OPENAI_API_KEY`
-- Optional secret: `SIMPLYCUBED_GH_TOKEN`
 
-`SIMPLYCUBED_GH_TOKEN` is strongly recommended. Without it, a PR opened with
-`GITHUB_TOKEN` may not trigger downstream workflows, which can leave required
-checks pending and block merge. If you set it, use a dedicated non-admin machine
-account token, not a human reviewer's token.
+The Actions runtime authenticates as the `simplycubed-code` GitHub App, so the
+App ID and private key are required. Create the App with `Contents`, `Issues`,
+and `Pull requests` permissions only, webhook disabled, install visibility `Any
+account`, then install it on the repository. Store the private key as the full
+PEM contents, including the `-----BEGIN` and `-----END` lines.
+
+Each job mints its own installation token for that repository, so the agent
+authors commits, pull requests, and comments as `simplycubed-code[bot]`, and its
+pull requests receive their own CI runs. A personal access token is not an
+alternative: the reusable workflow accepts App credentials only.
 
 5. Commit the generated config and workflow files in the target repository, open
 a setup pull request, and merge it yourself. Setup files are written locally by
@@ -131,7 +138,9 @@ passes:
   `azure-openai-endpoint`.
 - `secrets.AZURE_OPENAI_API_KEY` to the reusable workflow secret
   `azure-openai-api-key`.
-- Optionally `secrets.SIMPLYCUBED_GH_TOKEN` to `gh-token`.
+- `vars.SIMPLYCUBED_GH_APP_ID` to the reusable workflow input `github-app-id`.
+- `secrets.SIMPLYCUBED_GH_APP_PRIVATE_KEY` to the reusable workflow secret
+  `github-app-private-key`.
 
 The reusable workflow installs the CLI, exports the endpoint and key for the job,
 and runs `simplycubed run` or `simplycubed address`.
