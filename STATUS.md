@@ -1,99 +1,74 @@
 # Status
 
-SimplyCubed Code is at the very beginning. This file is the honest running
-account of what exists, what is deliberately deferred, and what a maintainer
-needs to do next. It is written to be read first.
+The honest running account of what exists, what is deferred, and what a
+maintainer does next. Read this first. For the product overview see the README.
 
-## What this branch adds (`build/foundation`)
+## What works today
 
-An overnight foundation pass, built engine-first so the whole loop is testable
-with no model calls. The scope line, on advice: **code the engine-independent
-layers; write the engine-dependent ones as docs**, because the parts that depend
-on a real model (prompt wording, budget numbers, stall thresholds, packaging) are
-exactly what the blocked Azure replay spike exists to validate. Coding them now
-would bake in guesses.
+Two loops run end to end via the CLI, on the Codex-on-Azure engine (GPT-5.4),
+driven entirely through GitHub:
 
-See `loop/goal.json` for the machine-readable goal, invariants, and milestones.
+- **Issue to pull request** (`simplycubed run <owner/repo#N>`). The implementer
+  works in an isolated worktree, retries against the repo's own gate until it
+  passes, commits and pushes, and opens a pull request. On a stall it escalates:
+  it labels the issue for a human and opens no pull request. It never merges.
+- **Fix on request** (`simplycubed address <owner/repo#PR>`). It reads the human
+  review feedback on an open pull request; a fixer role addresses it against the
+  gate and pushes back to the same branch for another look. Feedback is filtered
+  to the current head commit, so an already-addressed comment is never
+  re-litigated. It opens no new pull request and never merges.
 
-## What is coded now (M1 through M6, all green)
+Both were dogfooded: the issue-to-PR loop produced the merged dependency-upgrade
+PR on `charlesgreen/gsm`.
 
-- **Gate and CI** (`Makefile`, `.github/workflows/check.yml`).
-- **`internal/domain`** — core types with no model or GitHub dependency.
-- **`internal/engine`** — the `Runner` interface, plus a deterministic fake that
-  drives every test.
-- **`internal/gate`** — runs a repo gate command; captures exit code, an output
-  tail, and a normalized signature for stall detection.
-- **`internal/config`** — loads `.github/simplycubed.yml` and refuses a config
-  with no `gate:`.
-- **`internal/state`** — the `sc:` label lifecycle with mutual-exclusion
-  transitions.
-- **`internal/loop`** — the engine: goal to act to grade to repeat, opening a PR
-  on success and escalating (Blocked, no PR) on a stall. Includes the honesty
-  test.
-- **`internal/forge`** — the GitHub side as an interface (no merge method) with a
-  recording fake.
-- **`internal/ledger`** — append-only JSONL run events, wired into the loop.
-- **`internal/worktree`** — creates, lists, and removes an isolated git worktree
-  per issue (idempotent: an existing worktree for a branch is reused). Tested
-  against a temporary git repo.
+## Layers (all green under `make check`)
 
-The whole loop, including every failure path, runs with no model and no network.
+```
+cmd/simplycubed/      CLI: version, run, address
+internal/domain/      core types (Role, Issue, RunRequest, ReviewFeedback, Verdict)
+internal/engine/      Runner interface + fake; codex/ adapter (Azure OpenAI)
+internal/gate/        runs the repo gate command; exit code, output tail, signature
+internal/config/      .github/simplycubed.yml; refuses a missing gate; attribution flag
+internal/state/       sc: label lifecycle with mutual exclusion
+internal/roles/       implementer, reviewer, fixer as data; bounds; untrusted-input delimiting
+internal/loop/        goal -> act -> grade -> repeat; Run (issue->PR) and Fix (fix-on-request)
+internal/forge/       GitHub side as an interface (no merge method); gh/ adapter + recording fake
+internal/vcs/git/     commit, push, and sync-to-PR-head
+internal/attribution/ the SimplyCubed Code marker on generated commits and PRs
+internal/ledger/      append-only JSONL run events
+internal/worktree/    an isolated git worktree per issue
+docs/spec/            architecture
+docs/decisions/       ADRs
+loop/goal.json        the machine-readable goal contract
+```
 
-## What remains, and why it is not coded here
-
-Everything left is either blocked on you (the Azure spikes S1 through S4) or
-deliberately deferred to `docs/decisions` because it depends on how a real model
-behaves, which the S3 replay measures: the engine adapter, role prompts, the
-verdict schema, budget and stall numbers, and the GitHub Action packaging. This
-is the code-vs-docs line from the review, held on purpose.
+The whole loop, including every failure path, is tested with no model and no
+network, behind the `Runner` interface with a deterministic fake. The gh adapter
+and the codex adapter have their own tests (a gh stub, a fake codex).
 
 ## Gate
 
-`make check` is the gate: `gofmt`, `go vet`, `go build`, `go test`. It runs in
-CI via `.github/workflows/check.yml`. Every commit on this branch is meant to be
-green, so the branch can be reviewed commit by commit.
+`make check` is the gate: `gofmt`, `go vet`, `go build`, `go test`. It runs in CI
+via `.github/workflows/check.yml` and is the required check on `main`.
 
-## Deliberately NOT done (maintainer decisions)
+## What is next
 
-- **`make check` is not yet a required status check on `main`.** Left for you.
-  Making it required with an empty bypass list while you are the only account can
-  deadlock your own PRs (a PR author cannot approve their own PR). Resolve when a
-  bot identity or second reviewer exists, or add yourself as a bypass actor and
-  stop calling it no-bypass.
-- **No repository settings were changed overnight** (no ruleset, approval, or
-  branch-protection edits). Those are the one class of change a sleeping user
-  cannot easily undo.
+- **Wire the read-only reviewer role into the loop.** The `Reviewer` role and the
+  `Verdict` type exist, but no loop calls the reviewer yet, so today the review is
+  the human's. Wiring it (reviewer emits a structured verdict, findings feed the
+  fixer, comment-only, never a bot approval) is the next core-loop step. The
+  README says so plainly rather than implying it is already done.
+- **Self-onboarding via a bootstrap issue and setup pull requests** (the
+  `init`/onboard capability): the product proposes its own config, labels, and
+  workflow files as pull requests a human merges.
+- **Engine roadmap:** Codex on Azure (now) -> a Claude Code adapter -> Hugging
+  Face self-hosted models. Each is another `Runner` implementation; no core
+  rework.
+
+## Deliberately not done (maintainer decisions)
+
 - **CI actions are pinned by tag, not commit SHA.** Pin by SHA before this goes
   past scaffolding.
-
-## Blocked on you
-
-The Phase 0 validation spikes are blocked on Azure access and were not faked:
-
-- **S1 (Codex + Azure auth):** `codex` CLI is installed (0.146.0). The Azure
-  connection needs three non-secret names from you (resource name, gpt-5.4
-  deployment name, gpt-5.4-mini deployment name) and the `AZURE_OPENAI_API_KEY`
-  set in a scratch env file. An isolated `CODEX_HOME` config template is staged
-  in the session scratch dir so your existing `~/.codex` is untouched.
-- **S3 (replay against a real private repo):** the high-signal test of whether
-  GPT-5.4 can clear a real gate, by reverting known-good commits and checking
-  whether the loop reproduces them. Blocked by S1.
-
-Nothing in the codebase depends on these; they validate assumptions the ADRs
-record rather than the code.
-
-## Layout
-
-```
-cmd/simplycubed/      CLI entry (version; local run/debug later)
-internal/buildinfo/   build-time version
-internal/domain/      core types (M2)
-internal/engine/      Runner interface + fake engine (M2)
-internal/gate/        runs a repo gate command, captures result (M3)
-internal/config/      .github/simplycubed.yml; refuses a missing gate (M3)
-internal/state/       sc: label lifecycle (M3)
-internal/loop/        goal -> act -> grade -> repeat; PR only on success (M4)
-docs/spec/            architecture
-docs/decisions/       ADRs, including the engine-dependent design (M5)
-loop/goal.json        the goal contract for this build
-```
+- **Per-role bot identities do not exist yet.** Runs use the operator's own gh
+  auth. The design carries the per-role identity as configuration so adding it is
+  a config change, not a refactor.
