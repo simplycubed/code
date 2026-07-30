@@ -3,7 +3,10 @@
 All notable changes are recorded here and summarized again in the matching
 GitHub release notes for each tag.
 
-## v0.1.2
+## v0.1.3
+
+Supersedes v0.1.2, which was tagged from the wrong commit and is retracted in
+`go.mod`. The content below is what v0.1.2 was meant to carry.
 
 **Breaking (GitHub Actions runtime only):** the reusable workflow now
 authenticates as the `simplycubed-code` GitHub App and no longer accepts the
