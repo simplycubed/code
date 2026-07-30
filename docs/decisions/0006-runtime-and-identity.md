@@ -1,7 +1,6 @@
 # 0006. Runtime on GitHub Actions, and identity
 
-Status: Accepted for the runtime; the one-App-versus-two identity question is
-open.
+Status: Accepted.
 
 ## Context
 
@@ -29,11 +28,22 @@ contents plus pull requests plus issues, and nothing else. It never receives
 permission over workflows, administration, environments, or secrets, so it cannot
 edit its own CI gate or reach deploy configuration.
 
-## Open: one App or two
+## Decision update: one App
 
-A single App can carry both the implementer and reviewer roles, with the role
-shown in the comment header and least privilege achieved by scoping the
-per-request token. Two Apps (a worker identity and a reviewer identity) buy
-identity-level audit separation at the cost of a second install and a second key.
-Per-request token scoping is required either way. This is deferred to when the
-Action is built; the loop does not depend on the answer.
+Use one App: `simplycubed-code` carries the product's GitHub identity for
+commits, pull requests, labels, and comments. Each job mints its own
+installation token scoped to the current repository and only the permissions it
+needs, preserving least privilege without adding a second principal for the
+current loop.
+
+Reason: the automated reviewer role defined in #32 is comment-only by design,
+not a formal approval or request-changes reviewer. GitHub allows a COMMENT
+review from the PR author's own identity; only APPROVE and REQUEST_CHANGES are
+blocked. The current reviewer flow also passes findings in-process from the
+reviewer role to the fixer prompt, not through a GitHub review round-trip, so a
+separate App adds no capability today. Requiring adopters to install two Apps
+for one tool would also be a worse product experience.
+
+If a future automated reviewer needs to publish a formal review state rather
+than comments, splitting identities remains an option to revisit. For the
+present design, one App is the accepted decision.

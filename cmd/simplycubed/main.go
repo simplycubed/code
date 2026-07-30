@@ -104,7 +104,7 @@ gate:
 `
 
 const (
-	latestKnownWorkflowTag = "v0.1.1"
+	latestKnownWorkflowTag = "v0.1.3"
 	callerWorkflowTagToken = "__SIMPLYCUBED_TAG__"
 )
 
@@ -297,11 +297,14 @@ func initCmd(argv []string, stdout io.Writer) error {
 		fmt.Fprintf(stdout, "created labels: %s\n", strings.Join(created, ", "))
 	}
 	fmt.Fprintln(stdout, "next steps:")
+	fmt.Fprintln(stdout, "  - install the simplycubed-code GitHub App with contents, issues, and pull requests permissions only")
+	fmt.Fprintln(stdout, "  - disable the App webhook, set install visibility to Any account, and install it on the repo")
 	fmt.Fprintln(stdout, "  - write the real gate in .github/simplycubed.yml")
 	fmt.Fprintln(stdout, "  - verify that gate is green on your main branch")
+	fmt.Fprintln(stdout, "  - set the SIMPLYCUBED_GH_APP_ID repo variable")
+	fmt.Fprintln(stdout, "  - add the SIMPLYCUBED_GH_APP_PRIVATE_KEY repo secret with the full PEM, including BEGIN/END lines")
 	fmt.Fprintln(stdout, "  - set the AZURE_OPENAI_ENDPOINT repo variable")
 	fmt.Fprintln(stdout, "  - add the AZURE_OPENAI_API_KEY repo secret")
-	fmt.Fprintln(stdout, "  - optionally add the SIMPLYCUBED_GH_TOKEN repo secret")
 	fmt.Fprintln(stdout, "  - merge the PR containing the config and workflow changes")
 	fmt.Fprintln(stdout, "  - file an issue and apply the sc:go label")
 	return nil
