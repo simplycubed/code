@@ -181,17 +181,20 @@ func newVCS(self string) *vcsgit.Git {
 
 // newRunner builds the engine runner, honouring SIMPLYCUBED_SANDBOX.
 //
-// The default sandbox (workspace-write) uses bubblewrap on Linux, which cannot
-// create a network namespace inside a GitHub Actions runner:
+// The sandbox stays on. Nothing in this repository widens it, and the knob
+// exists only so an adopter who has genuinely sandboxed their runners
+// externally can decide that for themselves.
+//
+// Note that the default sandbox uses bubblewrap on Linux, which cannot create a
+// network namespace inside a stock GitHub Actions runner:
 //
 //	bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted
 //
 // Every command the engine tries then fails, including `pwd`, so it reads
-// nothing and changes nothing while still exiting successfully. The runtime
-// sets SIMPLYCUBED_SANDBOX=danger-full-access there, on the reasoning that in
-// CI the ephemeral runner is itself the isolation boundary: a per-job token
-// scoped to one repository, no production credentials, and the machine is
-// destroyed afterwards. Locally the sandbox stays on.
+// nothing and changes nothing while still exiting successfully. The answer to
+// that is not to widen the sandbox: it is that the run stops and a human
+// finishes the work. See docs/faq.md, and the self-test, which reports this
+// condition in one minute instead of after a run that appeared to succeed.
 func newRunner(cfg *config.Config, codexHome string) engine.Runner {
 	if cfg.Engine == "claude" {
 		return claude.New()

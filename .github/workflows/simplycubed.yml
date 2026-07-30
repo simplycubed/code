@@ -166,9 +166,4 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           AZURE_OPENAI_ENDPOINT: ${{ inputs['azure-openai-endpoint'] }}
           AZURE_OPENAI_API_KEY: ${{ secrets['azure-openai-api-key'] }}
-<<<<<<< HEAD
-          SIMPLYCUBED_SANDBOX: danger-full-access
         run: simplycubed address ${{ inputs['dry-run'] && '--dry-run' || '' }} "${GITHUB_REPOSITORY}#${{ inputs['pr-number'] }}" --actor "${{ inputs['actor-login'] }}" --model "${{ inputs.model }}" --repo-dir .
-=======
-        run: simplycubed address "${GITHUB_REPOSITORY}#${{ inputs['pr-number'] }}" --actor "${{ inputs['actor-login'] }}" --model "${{ inputs.model }}" --repo-dir .
->>>>>>> origin/main
