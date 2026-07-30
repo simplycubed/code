@@ -1,34 +1,31 @@
 {
-  "goal": "Build the SimplyCubed Code foundation: a gate-first, fake-engine-testable Go core so the full issue-to-PR loop runs with zero LLM spend, plus the written spec. Engine-dependent design (role prompts, budget/stall thresholds, Action packaging) is documented, not coded, because the blocked S3 Azure replay is what validates those assumptions.",
+  "goal": "A gate-first, engine-independent Go core that turns a GitHub issue into a gated pull request and addresses human review feedback on that pull request, behind a pluggable Runner interface. The agent proposes; it never merges and holds no deploy credential.",
   "date": "2026-07-30",
-  "progress": "M1 through M6 complete on branch build/foundation (PR #2), every commit green. Remaining work is either blocked on Azure access (S1-S4) or correctly deferred to docs pending the S3 replay. The engine-independent core is done.",
+  "progress": "Both core loops ship and are dogfooded. Issue-to-PR (loop.Run) produced a merged dependency-upgrade PR on charlesgreen/gsm. Fix-on-request (loop.Fix, `simplycubed address`) is built and tested end to end against a real git repo and bare remote. The codex-on-Azure adapter is real; the whole loop still tests with no model behind the fake Runner.",
   "invariants": [
-    "claude-proposes-actions-dispose: the loop only ever opens a pull request; it never merges and holds no deploy credential.",
-    "gate-first: no milestone is done until `make check` is green, and it must be green at every commit, not only at the tip.",
-    "gate-required: a target repo with no `gate:` configured is refused; an ungated loop is not built.",
-    "no-secrets-in-repo: no session-private material (production-repo gaps, host credentials, Azure resource or deployment names, keys) enters this public repository. State the conclusion, never the private fact.",
-    "engine-independence: the loop, gate, config, state machine, and domain types compile and test without any real model call, behind a Runner interface with a deterministic fake."
+    "claude-proposes-actions-dispose: the loop only ever opens or updates a pull request; it never merges and holds no deploy credential.",
+    "gate-first: no change is proposed until the repo's own gate passes, and `make check` is green at every commit.",
+    "gate-required: a target repo with no `gate:` configured is refused.",
+    "engine-independence: the loop, gate, config, state machine, roles, and domain types compile and test without any real model call, behind the Runner interface with a deterministic fake.",
+    "untrusted-input-delimited: issue bodies and review feedback are delimited as data, never treated as instructions, and the role bounds win over them.",
+    "no-secrets-in-repo: no session-private material (host credentials, Azure resource or deployment names, keys) enters this public repository."
   ],
   "milestones": [
     { "id": "M1", "title": "Repo foundation, gate, and CI", "status": "done" },
     { "id": "M2", "title": "Domain types, Runner interface, fake engine", "status": "done" },
     { "id": "M3", "title": "Gate runner, config, label state machine", "status": "done" },
-    { "id": "M4", "title": "Loop engine and the honesty test", "status": "done" },
-    { "id": "M5", "title": "Engine-dependent design as ADRs (docs, not code)", "status": "done" },
-    { "id": "M6", "title": "JSONL run ledger, wired into the loop", "status": "done" }
+    { "id": "M4", "title": "Loop engine (issue to PR) and the honesty test", "status": "done" },
+    { "id": "M5", "title": "JSONL run ledger, wired into the loop", "status": "done" },
+    { "id": "M6", "title": "Codex-on-Azure Runner adapter and per-run config", "status": "done" },
+    { "id": "M7", "title": "run CLI and end-to-end composition; first live PR on gsm", "status": "done" },
+    { "id": "M8", "title": "Fix-on-request loop (loop.Fix, `simplycubed address`)", "status": "done" },
+    { "id": "M9", "title": "Attribution marker on generated commits and PRs (config-gated)", "status": "done" },
+    { "id": "M10", "title": "Wire the read-only reviewer role into the loop (verdict -> fixer, comment-only)", "status": "next" },
+    { "id": "M11", "title": "Self-onboarding via bootstrap issue and setup PRs", "status": "planned" }
   ],
-  "blocked": [
-    {
-      "id": "S1-azure-auth",
-      "reason": "Needs the Azure OpenAI resource name, the gpt-5.4 and gpt-5.4-mini deployment names, and AZURE_OPENAI_API_KEY provided by the user. Not to be worked around by reading any on-disk credential.",
-      "unblocks": ["S2-context-file", "S3-replay", "S4-negative-control"]
-    },
-    {
-      "id": "S3-replay",
-      "reason": "The high-signal spike: revert known-good commits in a real private target repo on branches and see whether a codex-on-Azure loop reproduces green-gate PRs. Blocked by S1. This is what the pending ADRs (0003, 0004, 0005) wait on before they are coded.",
-      "unblocks": []
-    }
+  "pending_human": [
+    "First live fix-on-request run against charlesgreen/gsm#1: spends Azure tokens and pushes to an external contributor's branch, so it needs an explicit go-ahead. Prereqs: gsm has a .github/simplycubed.yml whose gate mirrors gsm's real CI, plus the sc: labels.",
+    "Per-role bot identities and making decisions about the reviewer's output contract (comment-only, never a bot approval) before M10 ships."
   ],
-  "deferred_to_docs": "The engine adapter, role prompts, verdict schema, budget/stall numbers, and Action packaging are recorded in docs/decisions as pending decisions rather than coded, because their correctness depends on real model behavior that S3 measures.",
-  "notes": "First action of any continued pass: check whether the Azure key file exists (existence only, never read it). If it appeared, pivot to S1 then S2 before any further scaffolding. If it did not, and no unblocked engine-independent work remains, stop the loop rather than spin."
+  "notes": "The engine roadmap (Claude Code adapter, then Hugging Face self-hosted) is additional Runner implementations, not core rework. Full plan: ~/.claude/plans/solutions-architect-agent-ml-engineer-a-robust-sparkle.md"
 }
