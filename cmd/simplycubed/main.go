@@ -46,6 +46,11 @@ func main() {
 			fmt.Fprintln(os.Stderr, "error:", err)
 			os.Exit(1)
 		}
+	case "preflight":
+		if err := preflightCmd(args[1:], os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
 	case "run":
 		if err := runCmd(args[1:]); err != nil {
 			fmt.Fprintln(os.Stderr, "error:", err)
@@ -68,6 +73,7 @@ func usage() {
 usage:
   simplycubed version
   simplycubed init [--repo-dir .] [--workflow]
+  simplycubed preflight [--repo-dir .]
   simplycubed run <owner/repo#N> [flags]
   simplycubed address <owner/repo#PR> [flags]
 
@@ -112,17 +118,44 @@ const (
 //go:embed simplycubed-caller.yml.tmpl
 var callerWorkflowTemplate string
 
-// validEndpoint rejects an AZURE_OPENAI_ENDPOINT that cannot work, so the run
-// stops here rather than deep inside the engine. It checks shape only: whether
-// the resource exists is the engine's business.
-func validEndpoint(endpoint string) error {
+// engineEnv validates the engine settings and returns the normalized endpoint.
+// It is the single implementation: `prepare` calls it before a run, and the
+// `preflight` command calls it so a workflow can fail early without a second
+// copy of these rules written in shell.
+func engineEnv() (string, error) {
+	endpoint := strings.TrimRight(os.Getenv("AZURE_OPENAI_ENDPOINT"), "/")
+	if endpoint == "" {
+		return "", fmt.Errorf("AZURE_OPENAI_ENDPOINT is not set. It is a repository variable on your own repository; a reusable workflow never inherits variables from SimplyCubed")
+	}
 	u, err := url.Parse(endpoint)
 	if err != nil {
-		return fmt.Errorf("AZURE_OPENAI_ENDPOINT is not a valid URL: %w", err)
+		return "", fmt.Errorf("AZURE_OPENAI_ENDPOINT is not a valid URL: %w", err)
 	}
 	if u.Scheme != "https" || u.Host == "" {
-		return fmt.Errorf("AZURE_OPENAI_ENDPOINT must be an https URL like https://<resource>.openai.azure.com, got %q", endpoint)
+		return "", fmt.Errorf("AZURE_OPENAI_ENDPOINT must be an https URL like https://<resource>.openai.azure.com, got %q", endpoint)
 	}
+	if os.Getenv("AZURE_OPENAI_API_KEY") == "" {
+		return "", fmt.Errorf("AZURE_OPENAI_API_KEY is not set. It is a repository secret on your own repository; a reusable workflow never inherits secrets from SimplyCubed")
+	}
+	return endpoint, nil
+}
+
+// preflightCmd validates the repo config and engine settings, then exits. A
+// workflow runs it before installing the rest of the toolchain, so a
+// misconfigured repository finds out in seconds and the rules live in one place.
+func preflightCmd(argv []string, stdout io.Writer) error {
+	fs := flag.NewFlagSet("preflight", flag.ContinueOnError)
+	repoDir := fs.String("repo-dir", ".", "path to the target repo checkout")
+	if _, err := parseInterleaved(fs, argv); err != nil {
+		return err
+	}
+	if _, err := config.Load(filepath.Join(*repoDir, ".github", "simplycubed.yml")); err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+	if _, err := engineEnv(); err != nil {
+		return err
+	}
+	fmt.Fprintln(stdout, "preflight ok: config and engine settings are present")
 	return nil
 }
 
@@ -175,17 +208,9 @@ func prepare(name string, argv []string) (*commonFlags, []string, error) {
 		return nil, nil, fmt.Errorf("load config: %w", err)
 	}
 
-	endpoint := strings.TrimRight(os.Getenv("AZURE_OPENAI_ENDPOINT"), "/")
-	if endpoint == "" {
-		return nil, nil, fmt.Errorf("AZURE_OPENAI_ENDPOINT is not set")
-	}
-	// A malformed endpoint otherwise fails much later, inside the engine, with
-	// an error that says nothing about the cause.
-	if err := validEndpoint(endpoint); err != nil {
+	endpoint, err := engineEnv()
+	if err != nil {
 		return nil, nil, err
-	}
-	if os.Getenv("AZURE_OPENAI_API_KEY") == "" {
-		return nil, nil, fmt.Errorf("AZURE_OPENAI_API_KEY is not set")
 	}
 
 	codexHome := filepath.Join(*stateDir, "codex-home")

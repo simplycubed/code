@@ -387,28 +387,29 @@ func buildVersionForTest(t *testing.T, version string) string {
 	return original
 }
 
-func TestValidEndpoint(t *testing.T) {
-	t.Parallel()
-	ok := []string{
-		"https://my-resource.openai.azure.com",
-		"https://example.openai.azure.com/some/path",
+func TestEngineEnvValidatesEndpointAndKey(t *testing.T) {
+	set := func(endpoint, key string) {
+		t.Setenv("AZURE_OPENAI_ENDPOINT", endpoint)
+		t.Setenv("AZURE_OPENAI_API_KEY", key)
 	}
-	for _, e := range ok {
-		if err := validEndpoint(e); err != nil {
-			t.Fatalf("validEndpoint(%q) = %v, want nil", e, err)
-		}
+	// A trailing slash is normalized away, because the engine appends a path.
+	set("https://r.openai.azure.com/", "k")
+	got, err := engineEnv()
+	if err != nil || got != "https://r.openai.azure.com" {
+		t.Fatalf("engineEnv() = %q, %v", got, err)
 	}
-	// Each of these otherwise fails deep in the engine with an error that says
-	// nothing about the endpoint being the cause.
-	bad := []string{
-		"http://my-resource.openai.azure.com", // not https
-		"my-resource.openai.azure.com",        // no scheme
-		"https://",                            // no host
-		"not a url",
-	}
-	for _, e := range bad {
-		if err := validEndpoint(e); err == nil {
-			t.Fatalf("validEndpoint(%q) = nil, want an error", e)
+	// Each of these otherwise fails deep in the engine, where the message says
+	// nothing about the cause.
+	for name, c := range map[string][2]string{
+		"missing endpoint": {"", "k"},
+		"missing key":      {"https://r.openai.azure.com", ""},
+		"not https":        {"http://r.openai.azure.com", "k"},
+		"no scheme":        {"r.openai.azure.com", "k"},
+		"no host":          {"https://", "k"},
+	} {
+		set(c[0], c[1])
+		if _, err := engineEnv(); err == nil {
+			t.Fatalf("%s: expected an error", name)
 		}
 	}
 }

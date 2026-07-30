@@ -124,23 +124,6 @@ jobs:
               ;;
           esac
 
-      - name: Verify engine configuration
-        run: |
-          fail=0
-          if [ -z "${AZURE_OPENAI_ENDPOINT}" ]; then
-            echo "AZURE_OPENAI_ENDPOINT is empty. Set it as a repository VARIABLE (not a secret) on this repository; a reusable workflow never inherits variables from SimplyCubed." >&2
-            fail=1
-          elif ! printf '%s' "${AZURE_OPENAI_ENDPOINT}" | grep -Eq '^https://[^[:space:]]+$'; then
-            echo "AZURE_OPENAI_ENDPOINT is not an https URL. Expected something like https://<resource>.openai.azure.com" >&2
-            fail=1
-          fi
-          if [ -z "${AZURE_OPENAI_API_KEY}" ]; then
-            echo "AZURE_OPENAI_API_KEY is empty. Set it as a repository SECRET on this repository; a reusable workflow never inherits secrets from SimplyCubed." >&2
-            fail=1
-          fi
-          [ "${fail}" -eq 0 ] || { echo "See the install section of https://github.com/simplycubed/code#readme" >&2; exit 1; }
-          echo "engine configuration present"
-
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
@@ -148,6 +131,9 @@ jobs:
 
       - name: Install SimplyCubed CLI
         run: go install github.com/simplycubed/code/cmd/simplycubed@${{ inputs.version }}
+
+      - name: Preflight
+        run: simplycubed preflight --repo-dir .
 
       - name: Install Codex CLI
         run: npm install -g @openai/codex@0.146.0
@@ -253,24 +239,6 @@ jobs:
               ;;
           esac
 
-      - name: Verify engine configuration
-        if: ${{ steps.self-review.outputs.skip != 'true' }}
-        run: |
-          fail=0
-          if [ -z "${AZURE_OPENAI_ENDPOINT}" ]; then
-            echo "AZURE_OPENAI_ENDPOINT is empty. Set it as a repository VARIABLE (not a secret) on this repository; a reusable workflow never inherits variables from SimplyCubed." >&2
-            fail=1
-          elif ! printf '%s' "${AZURE_OPENAI_ENDPOINT}" | grep -Eq '^https://[^[:space:]]+$'; then
-            echo "AZURE_OPENAI_ENDPOINT is not an https URL. Expected something like https://<resource>.openai.azure.com" >&2
-            fail=1
-          fi
-          if [ -z "${AZURE_OPENAI_API_KEY}" ]; then
-            echo "AZURE_OPENAI_API_KEY is empty. Set it as a repository SECRET on this repository; a reusable workflow never inherits secrets from SimplyCubed." >&2
-            fail=1
-          fi
-          [ "${fail}" -eq 0 ] || { echo "See the install section of https://github.com/simplycubed/code#readme" >&2; exit 1; }
-          echo "engine configuration present"
-
       - name: Set up Go
         if: ${{ steps.self-review.outputs.skip != 'true' }}
         uses: actions/setup-go@v6
@@ -280,6 +248,10 @@ jobs:
       - name: Install SimplyCubed CLI
         if: ${{ steps.self-review.outputs.skip != 'true' }}
         run: go install github.com/simplycubed/code/cmd/simplycubed@${{ inputs.version }}
+
+      - name: Preflight
+        if: ${{ steps.self-review.outputs.skip != 'true' }}
+        run: simplycubed preflight --repo-dir .
 
       - name: Install Codex CLI
         if: ${{ steps.self-review.outputs.skip != 'true' }}
