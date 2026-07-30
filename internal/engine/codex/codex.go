@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/simplycubed/code/internal/domain"
@@ -102,8 +103,7 @@ func (r *Runner) Run(ctx context.Context, req domain.RunRequest) (domain.RunResu
 
 	cmd := exec.CommandContext(ctx, r.bin(), args...)
 	cmd.Dir = req.WorkDir
-	cmd.Env = append(os.Environ(), r.ExtraEnv...)
-	cmd.Env = append(cmd.Env, "CODEX_HOME="+r.CodexHome)
+	cmd.Env = r.childEnv(req.WorkDir)
 	out, runErr := cmd.CombinedOutput()
 
 	summary := ""
@@ -120,6 +120,50 @@ func (r *Runner) Run(ctx context.Context, req domain.RunRequest) (domain.RunResu
 		return res, res.Err
 	}
 	return res, nil
+}
+
+// childEnv builds the environment for the codex process. It drops any inherited
+// GOCACHE and CODEX_HOME, applies ExtraEnv, sets CODEX_HOME, and (unless ExtraEnv
+// already sets GOCACHE) points GOCACHE at a workspace-local directory so a Go
+// toolchain can write its build cache inside the sandbox. Without this the agent
+// hits a read-only cache and is tempted to edit the gate to get past it, which
+// is exactly what the S3-B spike observed.
+func (r *Runner) childEnv(workDir string) []string {
+	env := filterEnvKeys(os.Environ(), "GOCACHE", "CODEX_HOME")
+	env = append(env, r.ExtraEnv...)
+	if !hasEnvKey(r.ExtraEnv, "GOCACHE") {
+		gc := filepath.Join(workDir, ".gocache")
+		_ = os.MkdirAll(gc, 0o755)
+		env = append(env, "GOCACHE="+gc)
+	}
+	env = append(env, "CODEX_HOME="+r.CodexHome)
+	return env
+}
+
+func filterEnvKeys(env []string, keys ...string) []string {
+	out := make([]string, 0, len(env))
+	for _, e := range env {
+		drop := false
+		for _, k := range keys {
+			if strings.HasPrefix(e, k+"=") {
+				drop = true
+				break
+			}
+		}
+		if !drop {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+func hasEnvKey(env []string, key string) bool {
+	for _, e := range env {
+		if strings.HasPrefix(e, key+"=") {
+			return true
+		}
+	}
+	return false
 }
 
 func tail(s string, n int) string {
