@@ -51,14 +51,10 @@ The GitHub App identity is `simplycubed-code[bot]`. That bot is the single audit
 
 ## Getting started
 
-Onboarding is meant to happen through GitHub itself rather than a local setup script.
-
-1. Install the `simplycubed-code[bot]` GitHub App on the repo you want it to work in.
-2. File a bootstrap issue.
-3. The agent opens a set of setup pull requests that add its own configuration, the labels it uses, and the workflow files it needs.
-4. Review and merge those, then file your first real issue and apply `sc:go`.
-
-Because setup arrives as pull requests, you see exactly what the agent adds to your repo before any of it lands.
+The current onboarding path is one workflow change plus one local init step.
+Use [Install into your GitHub](#install-into-your-github): copy the caller
+workflow, add the Azure endpoint and key, run `simplycubed init`, merge, then
+label an issue `sc:go`.
 
 ## Installation
 
@@ -72,6 +68,16 @@ simplycubed version
 That prints `0.1.0`. Pre-1.0 releases follow semver with the usual caveat: minor
 versions may still change behavior. Pin the tag you have validated rather than
 floating on `@latest`.
+
+## Install into your GitHub
+
+To run the loop inside your own GitHub Actions:
+
+1. Copy [`docs/templates/simplycubed-caller.yml`](docs/templates/simplycubed-caller.yml) into the adopter repo as `.github/workflows/simplycubed.yml`, then merge that one workflow pull request.
+2. Add a repository variable `AZURE_OPENAI_ENDPOINT` with your Azure OpenAI endpoint, and add the repository secret `AZURE_OPENAI_API_KEY`.
+3. Optionally add a PAT as `SIMPLYCUBED_GH_TOKEN`. This is strongly recommended: pushes and pull requests authored with `GITHUB_TOKEN` do not trigger downstream workflows, so without a PAT the agent's PRs can miss their `check` runs and required checks block merge. The reusable workflow falls back to `github.token` only when no PAT is set; issue #31 replaces this later with an App token.
+4. Run `simplycubed init` once in the adopter repo so `.github/simplycubed.yml` and the `sc:*` labels exist, then merge that setup change.
+5. File an issue and apply the `sc:go` label. Reviews submitted on the resulting pull request call back into the same reusable workflow for the fix-on-request loop.
 
 ## Configuration
 

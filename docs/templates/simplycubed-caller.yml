@@ -1,0 +1,32 @@
+name: simplycubed
+
+on:
+  issues:
+    types: [labeled]
+  pull_request_review:
+    types: [submitted]
+
+jobs:
+  run:
+    if: ${{ github.event_name == 'issues' && github.event.label.name == 'sc:go' }}
+    uses: simplycubed/code/.github/workflows/simplycubed.yml@v0.1.0
+    with:
+      ref: ${{ github.event.issue.number }}
+      issue-number: ${{ github.event.issue.number }}
+      actor-login: ${{ github.event.sender.login }}
+      azure-openai-endpoint: ${{ vars.AZURE_OPENAI_ENDPOINT }}
+    secrets:
+      azure-openai-api-key: ${{ secrets.AZURE_OPENAI_API_KEY }}
+      gh-token: ${{ secrets.SIMPLYCUBED_GH_TOKEN }}
+
+  address:
+    if: ${{ github.event_name == 'pull_request_review' }}
+    uses: simplycubed/code/.github/workflows/simplycubed.yml@v0.1.0
+    with:
+      ref: ${{ github.event.pull_request.number }}
+      pr-number: ${{ github.event.pull_request.number }}
+      actor-login: ${{ github.event.review.user.login }}
+      azure-openai-endpoint: ${{ vars.AZURE_OPENAI_ENDPOINT }}
+    secrets:
+      azure-openai-api-key: ${{ secrets.AZURE_OPENAI_API_KEY }}
+      gh-token: ${{ secrets.SIMPLYCUBED_GH_TOKEN }}
