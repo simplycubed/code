@@ -32,6 +32,10 @@ type Config struct {
 	// "SimplyCubed Code" marker. On by default; a repo owner turns it off with
 	// `attribution: false`.
 	Attribution bool
+	// PRDescription selects the generated pull-request body style. "" (the
+	// default) is the plain one-line body; "rich" adds a generated walkthrough,
+	// changes table, and sequence diagram (issue #16). Opt-in until validated.
+	PRDescription string
 }
 
 // Load reads and validates the config file at path.
@@ -71,6 +75,12 @@ func Parse(b []byte) (*Config, error) {
 			switch strings.ToLower(val) {
 			case "false", "no", "off", "0":
 				c.Attribution = false
+			}
+		case "prDescription":
+			// Only the documented value enables it; anything else is the default
+			// plain body, so a typo fails safe rather than half-enabling.
+			if strings.ToLower(val) == "rich" {
+				c.PRDescription = "rich"
 			}
 		}
 	}

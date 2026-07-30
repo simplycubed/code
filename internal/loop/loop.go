@@ -76,6 +76,13 @@ type Engine struct {
 	// the raw issue body. The app wires this to the roles package so the bounds
 	// (never edit the gate or tests to pass) travel with every turn.
 	Prompt func(role domain.Role, iss domain.Issue) string
+	// Describe, when set, runs once after the gate passes and before the change
+	// is committed, and returns extra markdown for the pull-request body (issue
+	// #16). It is best-effort by contract: "" means the plain body, and no
+	// failure inside the hook may block the pull request. It must run before the
+	// commit because its artifact lives in the scratch directory the commit step
+	// deletes.
+	Describe func(ctx context.Context, iss domain.Issue) string
 	// Ledger is optional. When set, the loop records a line per round and a
 	// terminal line per run.
 	Ledger *ledger.Writer
@@ -271,6 +278,13 @@ func (e *Engine) fixEscalate(ctx context.Context, req FixRequest, prefix string,
 }
 
 func (e *Engine) openPR(ctx context.Context, iss domain.Issue, prefix string, round int) (Result, error) {
+	// Compose the rich description first: its artifact lives in the scratch
+	// directory, which the commit below deletes before staging.
+	description := ""
+	if e.Describe != nil {
+		description = e.Describe(ctx, iss)
+	}
+
 	// Persist the agent's changes before opening the PR. Without this the PR
 	// would have no content. Skipped when no VCS is wired (unit tests).
 	if e.VCS != nil {
@@ -288,9 +302,13 @@ func (e *Engine) openPR(ctx context.Context, iss domain.Issue, prefix string, ro
 		}
 	}
 
+	content := "Automated change from an issue. A human reviews and merges; this loop does not."
+	if description != "" {
+		content += "\n\n" + description
+	}
 	url, err := e.Forge.OpenPR(ctx, iss.Repo, e.Cfg.Branch,
 		fmt.Sprintf("Closes #%d: %s", iss.Number, iss.Title),
-		attribution.PRBody("Automated change from an issue. A human reviews and merges; this loop does not.", e.Cfg.Attribute))
+		attribution.PRBody(content, e.Cfg.Attribute))
 	if err != nil {
 		e.log(iss, ledger.Event{Phase: ledger.PhaseRunEnd, Outcome: string(OutcomeBlocked), Reason: "open PR failed"})
 		return Result{Outcome: OutcomeBlocked, Rounds: round, Reason: "open PR failed: " + err.Error()}, err

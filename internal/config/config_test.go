@@ -60,3 +60,21 @@ setup: pnpm install
 		t.Fatalf("gate=%q setup=%q", c.Gate, c.Setup)
 	}
 }
+
+func TestParsePRDescription(t *testing.T) {
+	// Default: plain body.
+	c, err := Parse([]byte("gate: make check\n"))
+	if err != nil || c.PRDescription != "" {
+		t.Fatalf("default PRDescription = %q err = %v", c.PRDescription, err)
+	}
+	// Documented value enables it.
+	c, err = Parse([]byte("gate: make check\nprDescription: rich\n"))
+	if err != nil || c.PRDescription != "rich" {
+		t.Fatalf("PRDescription = %q err = %v, want rich", c.PRDescription, err)
+	}
+	// Anything else fails safe to the plain body.
+	c, err = Parse([]byte("gate: make check\nprDescription: fancy\n"))
+	if err != nil || c.PRDescription != "" {
+		t.Fatalf("unknown value must fail safe, got %q err = %v", c.PRDescription, err)
+	}
+}
