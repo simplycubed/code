@@ -252,8 +252,10 @@ func (e *Engine) pushFix(ctx context.Context, req FixRequest, prefix string, rou
 			return e.fixEscalate(ctx, req, prefix, round, "push failed: "+err.Error())
 		}
 	}
+	// The attribution footer belongs on the pull-request body, not on every
+	// comment: repeated on each fix round it is just noise.
 	_ = e.Forge.CommentPR(ctx, req.Repo, req.PR,
-		attribution.PRBody("Addressed the requested changes and the gate is green. Ready for another look.", e.Cfg.Attribute))
+		"Addressed the requested changes and the gate is green. Ready for another look.")
 	_ = e.Forge.SetState(ctx, req.Repo, target, state.Label(prefix, state.Review))
 	e.log(iss, ledger.Event{Phase: ledger.PhaseRunEnd, Outcome: string(OutcomeChangesPushed)})
 	return Result{Outcome: OutcomeChangesPushed, Rounds: round}, nil

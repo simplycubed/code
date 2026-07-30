@@ -120,9 +120,10 @@ if [ "$1" = "pr" ] && [ "$2" = "view" ]; then
   exit 0
 fi
 if [ "$1" = "api" ]; then
+  # Emulate gh api --paginate --slurp: an array whose elements are per-page arrays.
   case "$2" in
-    *reviews*) echo '[{"user":{"login":"human"},"body":"please rename X","state":"CHANGES_REQUESTED","commit_id":"HEAD1"},{"user":{"login":"human"},"body":"stale note","state":"CHANGES_REQUESTED","commit_id":"OLD0"},{"user":{"login":"simplycubed-code[bot]"},"body":"i addressed it","state":"COMMENTED","commit_id":"HEAD1"},{"user":{"login":"human"},"body":"","state":"COMMENTED","commit_id":"HEAD1"}]' ;;
-    *comments*) echo '[{"user":{"login":"human"},"body":"fix this line","path":"main.go","line":10,"original_line":9,"commit_id":"HEAD1"},{"user":{"login":"human"},"body":"old inline","path":"main.go","line":5,"commit_id":"OLD0"}]' ;;
+    *reviews*) echo '[[{"user":{"login":"human"},"body":"please rename X","state":"CHANGES_REQUESTED","commit_id":"HEAD1"},{"user":{"login":"human"},"body":"stale note","state":"CHANGES_REQUESTED","commit_id":"OLD0"},{"user":{"login":"simplycubed-code[bot]"},"body":"i addressed it","state":"COMMENTED","commit_id":"HEAD1"},{"user":{"login":"human"},"body":"","state":"COMMENTED","commit_id":"HEAD1"}]]' ;;
+    *comments*) echo '[[{"user":{"login":"human"},"body":"fix this line","path":"main.go","line":10,"original_line":9,"commit_id":"HEAD1"},{"user":{"login":"human"},"body":"old inline","path":"main.go","line":5,"commit_id":"OLD0"}]]' ;;
   esac
   exit 0
 fi
