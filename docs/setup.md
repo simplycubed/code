@@ -10,12 +10,12 @@ that spike rather than a config path the product reads on its own.
 
 Three non-secret values and one secret.
 
-| Input | What it is | Secret? |
-| --- | --- | --- |
-| Resource name | The `<name>` in `https://<name>.openai.azure.com` | No |
-| GPT-5.4 deployment name | The deployment you created for the full model (the name is yours, not necessarily `gpt-5.4`) | No |
-| GPT-5.4-mini deployment name | The deployment for the small model | No |
-| `AZURE_OPENAI_API_KEY` | The resource key | Yes |
+| Input                        | What it is                                                                                   | Secret? |
+| ---------------------------- | -------------------------------------------------------------------------------------------- | ------- |
+| Resource name                | The `<name>` in `https://<name>.openai.azure.com`                                            | No      |
+| GPT-5.4 deployment name      | The deployment you created for the full model (the name is yours, not necessarily `gpt-5.4`) | No      |
+| GPT-5.4-mini deployment name | The deployment for the small model                                                           | No      |
+| `AZURE_OPENAI_API_KEY`       | The resource key                                                                             | Yes     |
 
 The Codex CLI is configured for Azure like this (base URL includes `/openai/v1`,
 key read from the environment by name, Responses wire API):
@@ -45,6 +45,34 @@ This distinction matters and is easy to get wrong.
 
 In both cases the key is referenced by name; the value never goes in a config
 file or the repository.
+
+## Where the config lives when the engine runs in GitHub Actions
+
+A GitHub Actions runner is ephemeral, so there is no persistent home directory to
+hold a `config.toml`. The config is generated per job instead, from three
+sources, and the key never sits in the repository.
+
+- **Non-secret settings** (endpoint, deployment names, the provider block,
+  `wire_api`) come from `.github/simplycubed.yml`, and where useful from
+  repository or organization Variables. These are committed and safe to read.
+- **The key** (`AZURE_OPENAI_API_KEY`) is a GitHub Actions secret, injected into
+  the job as an environment variable. The generated config references it by name
+  through `env_key`; the value is never written to a file or the repo.
+- **The `config.toml` itself** is written by the action at runtime into a
+  job-scoped `CODEX_HOME` (for example under the runner's temp directory) and
+  discarded when the job ends. It is generated, not stored.
+
+So a job reads the non-secret config, renders a `config.toml` into a temporary
+`CODEX_HOME`, runs `codex` with the key present only as an environment variable,
+and throws the config away when it finishes. Every secret stays out of the
+repository, and the config is per-adopter: each repository supplies its own
+endpoint, deployment names, and key.
+
+The code that generates this config is part of the engine adapter and the Action
+packaging, which are pending the S3 spike (see
+[ADR 0003](decisions/0003-codex-azure-first-engine.md) and
+[ADR 0006](decisions/0006-runtime-and-identity.md)). This section is the intended
+design, not a description of shipped code.
 
 ## Model tiering
 
