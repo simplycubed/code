@@ -116,3 +116,38 @@ func TestPushSendsBranchToRemote(t *testing.T) {
 		t.Fatalf("branch not on remote: %q", remote)
 	}
 }
+
+// A GitHub Actions runner has no git identity, so a commit there fails with
+// "Author identity unknown" after the change is made and the gate has passed:
+// the most expensive possible moment to discover it. Supplying the identity per
+// command avoids that without mutating the machine's global config.
+func TestCommitUsesTheConfiguredIdentity(t *testing.T) {
+	work := repoWithBareRemote(t)
+	// Remove the identity this repo was seeded with, reproducing a bare runner.
+	gitCmd(t, work, "config", "--unset", "user.email")
+	gitCmd(t, work, "config", "--unset", "user.name")
+
+	g := &Git{AuthorName: "simplycubed-code[bot]", AuthorEmail: "simplycubed-code@users.noreply.github.com"}
+	if err := os.WriteFile(filepath.Join(work, "a.txt"), []byte("hi"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	committed, err := g.Commit(context.Background(), work, "add a.txt")
+	if err != nil || !committed {
+		t.Fatalf("commit with an explicit identity should succeed: committed=%v err=%v", committed, err)
+	}
+	author := gitCmd(t, work, "log", "-1", "--format=%an <%ae>")
+	if !strings.Contains(author, "simplycubed-code[bot]") {
+		t.Fatalf("author = %q, want the configured identity", author)
+	}
+}
+
+func TestCommitWithoutAnIdentityStillWorksWhenGitHasOne(t *testing.T) {
+	work := repoWithBareRemote(t) // seeded with a local identity
+	g := &Git{}
+	if err := os.WriteFile(filepath.Join(work, "b.txt"), []byte("hi"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if committed, err := g.Commit(context.Background(), work, "add b.txt"); err != nil || !committed {
+		t.Fatalf("committed=%v err=%v", committed, err)
+	}
+}
