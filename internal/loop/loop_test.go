@@ -63,6 +63,41 @@ func TestSuccessOpensPR(t *testing.T) {
 	}
 }
 
+// The Describe hook's output lands in the pull-request body; an empty result
+// leaves the plain body. Either way the PR opens — the hook is additive only.
+func TestDescribeHookEnrichesPRBody(t *testing.T) {
+	dir := t.TempDir()
+	eng, f := newEngine(dir, enginefake.New(
+		enginefake.Step{Summary: "fix", Apply: writeFixed},
+	))
+	eng.Describe = func(context.Context, domain.Issue) string { return "## Walkthrough\n\nrich section" }
+	res, err := eng.Run(context.Background(), domain.Issue{Repo: "o/r", Number: 7})
+	if err != nil || res.Outcome != OutcomePROpened {
+		t.Fatalf("outcome = %s err = %v", res.Outcome, err)
+	}
+	if len(f.PRBodies) != 1 || !strings.Contains(f.PRBodies[0], "rich section") {
+		t.Fatalf("PR body missing the described section: %q", f.PRBodies)
+	}
+	if !strings.Contains(f.PRBodies[0], "Automated change from an issue") {
+		t.Fatalf("plain body line must remain: %q", f.PRBodies[0])
+	}
+}
+
+func TestDescribeHookEmptyKeepsPlainBody(t *testing.T) {
+	dir := t.TempDir()
+	eng, f := newEngine(dir, enginefake.New(
+		enginefake.Step{Summary: "fix", Apply: writeFixed},
+	))
+	eng.Describe = func(context.Context, domain.Issue) string { return "" }
+	res, err := eng.Run(context.Background(), domain.Issue{Repo: "o/r", Number: 7})
+	if err != nil || res.Outcome != OutcomePROpened {
+		t.Fatalf("outcome = %s err = %v", res.Outcome, err)
+	}
+	if len(f.PRBodies) != 1 || f.PRBodies[0] != "Automated change from an issue. A human reviews and merges; this loop does not." {
+		t.Fatalf("plain body expected: %q", f.PRBodies)
+	}
+}
+
 func TestFixOnSecondRoundOpensPR(t *testing.T) {
 	dir := t.TempDir()
 	eng, f := newEngine(dir, enginefake.New(

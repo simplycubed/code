@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/simplycubed/code/internal/config"
+	"github.com/simplycubed/code/internal/describe"
 	"github.com/simplycubed/code/internal/domain"
 	"github.com/simplycubed/code/internal/engine"
 	"github.com/simplycubed/code/internal/forge"
@@ -60,6 +61,26 @@ func promptBuilder(gateCmd string) func(domain.Role, domain.Issue) string {
 			def = roles.Reviewer
 		}
 		return roles.Assemble(def, iss, gateCmd)
+	}
+}
+
+// describeHook returns the loop's Describe hook: one describer turn that writes
+// the artifact into the worktree's scratch directory, then read-parse-render.
+// Best-effort by contract — any failure returns "", the plain PR body.
+func describeHook(r engine.Runner, workDir string) func(context.Context, domain.Issue) string {
+	return func(ctx context.Context, iss domain.Issue) string {
+		if _, err := r.Run(ctx, domain.RunRequest{
+			Role:    domain.RoleDescriber,
+			WorkDir: workDir,
+			Prompt:  roles.AssembleDescribe(iss, describe.RelPath),
+		}); err != nil {
+			return ""
+		}
+		a, err := describe.Load(workDir)
+		if err != nil {
+			return ""
+		}
+		return describe.Render(a)
 	}
 }
 
@@ -151,6 +172,9 @@ func Run(ctx context.Context, d Deps, cfg *config.Config, iss domain.Issue, base
 		VCS:    d.VCS,
 		Prompt: promptBuilder(cfg.Gate),
 		Cfg:    loop.Config{WorkDir: wt, Branch: branch, LabelPrefix: prefix, Attribute: cfg.Attribution},
+	}
+	if cfg.PRDescription == "rich" {
+		eng.Describe = describeHook(d.Runner, wt)
 	}
 	return eng.Run(ctx, iss)
 }

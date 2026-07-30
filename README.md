@@ -80,6 +80,14 @@ gate: make check
 attribution: false
 ```
 
+Generated pull requests carry a one-line body by default. Set `prDescription: rich` to have the agent add a generated walkthrough, a changes table, and a mermaid sequence diagram to the body of each pull request it opens. The sections are marked as generated and are additive to your own review, never a substitute for it; if the generation fails or produces nothing valid, the pull request opens with the plain body.
+
+```yaml
+gate: make check
+
+prDescription: rich
+```
+
 A repo with no gate is refused, on purpose. An agent loop with nothing to stop it will wander, break things, and still report success. The gate is the safety mechanism, so the tool treats its absence as a configuration error rather than a default to paper over. The engineering that matters here is the gate, not the loop.
 
 Getting the gate right is where first runs stall: it has to be green on your own `main`, it should mirror what your CI actually enforces, and the genuinely environmental checks (a version matrix, Docker, tests that need a running service) stay in CI. The [FAQ](docs/faq.md) walks through each of these with real onboarding examples.

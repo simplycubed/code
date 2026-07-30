@@ -15,6 +15,9 @@ const (
 	// changes, then runs the gate. Like the implementer, it may edit; unlike it,
 	// its input is review feedback on an existing branch rather than an issue.
 	RoleFixer Role = "fixer"
+	// RoleDescriber reads the pending change and writes a structured description
+	// artifact for the pull-request body. It never edits code.
+	RoleDescriber Role = "describer"
 )
 
 // Issue is the unit of work: a GitHub issue the loop acts on.

@@ -14,6 +14,7 @@ import (
 type Forge struct {
 	mu         sync.Mutex
 	PRCount    int
+	PRBodies   []string
 	States     []string
 	Comments   []string
 	PRComments []string
@@ -27,10 +28,11 @@ type Forge struct {
 }
 
 // OpenPR records a pull request and returns a URL.
-func (f *Forge) OpenPR(_ context.Context, _, _, _, _ string) (string, error) {
+func (f *Forge) OpenPR(_ context.Context, _, _, _, body string) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.PRCount++
+	f.PRBodies = append(f.PRBodies, body)
 	if f.URL != "" {
 		return f.URL, nil
 	}
