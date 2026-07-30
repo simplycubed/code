@@ -132,6 +132,9 @@ jobs:
       - name: Install SimplyCubed CLI
         run: go install github.com/simplycubed/code/cmd/simplycubed@${{ inputs.version }}
 
+      - name: Preflight
+        run: simplycubed preflight --repo-dir .
+
       - name: Install Codex CLI
         run: npm install -g @openai/codex@0.146.0
 
@@ -245,6 +248,10 @@ jobs:
       - name: Install SimplyCubed CLI
         if: ${{ steps.self-review.outputs.skip != 'true' }}
         run: go install github.com/simplycubed/code/cmd/simplycubed@${{ inputs.version }}
+
+      - name: Preflight
+        if: ${{ steps.self-review.outputs.skip != 'true' }}
+        run: simplycubed preflight --repo-dir .
 
       - name: Install Codex CLI
         if: ${{ steps.self-review.outputs.skip != 'true' }}

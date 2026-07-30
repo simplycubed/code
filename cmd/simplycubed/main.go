@@ -14,6 +14,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -32,41 +33,55 @@ import (
 )
 
 func main() {
-	args := os.Args[1:]
+	os.Exit(dispatch(os.Args[1:], os.Stdout, os.Stderr))
+}
+
+// dispatch runs one command and returns the process exit code. main is only a
+// wrapper around it, so the whole entry point (argument handling, exit codes,
+// error reporting) is reachable from a test instead of being the one part of
+// the CLI that nothing exercises.
+func dispatch(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		usage()
-		os.Exit(2)
+		usage(stderr)
+		return 2
+	}
+	fail := func(err error) int {
+		fmt.Fprintln(stderr, "error:", err)
+		return 1
 	}
 	switch args[0] {
 	case "version", "--version", "-v":
-		fmt.Println(buildinfo.Version)
+		fmt.Fprintln(stdout, buildinfo.Version)
 	case "init":
-		if err := initCmd(args[1:], os.Stdout); err != nil {
-			fmt.Fprintln(os.Stderr, "error:", err)
-			os.Exit(1)
+		if err := initCmd(args[1:], stdout); err != nil {
+			return fail(err)
+		}
+	case "preflight":
+		if err := preflightCmd(args[1:], stdout); err != nil {
+			return fail(err)
 		}
 	case "run":
 		if err := runCmd(args[1:]); err != nil {
-			fmt.Fprintln(os.Stderr, "error:", err)
-			os.Exit(1)
+			return fail(err)
 		}
 	case "address":
 		if err := addressCmd(args[1:]); err != nil {
-			fmt.Fprintln(os.Stderr, "error:", err)
-			os.Exit(1)
+			return fail(err)
 		}
 	default:
-		usage()
-		os.Exit(2)
+		usage(stderr)
+		return 2
 	}
+	return 0
 }
 
-func usage() {
-	fmt.Fprintf(os.Stderr, `simplycubed %s
+func usage(w io.Writer) {
+	fmt.Fprintf(w, `simplycubed %s
 
 usage:
   simplycubed version
   simplycubed init [--repo-dir .] [--workflow]
+  simplycubed preflight [--repo-dir .]
   simplycubed run <owner/repo#N> [flags]
   simplycubed address <owner/repo#PR> [flags]
 
@@ -110,6 +125,47 @@ const (
 
 //go:embed simplycubed-caller.yml.tmpl
 var callerWorkflowTemplate string
+
+// engineEnv validates the engine settings and returns the normalized endpoint.
+// It is the single implementation: `prepare` calls it before a run, and the
+// `preflight` command calls it so a workflow can fail early without a second
+// copy of these rules written in shell.
+func engineEnv() (string, error) {
+	endpoint := strings.TrimRight(os.Getenv("AZURE_OPENAI_ENDPOINT"), "/")
+	if endpoint == "" {
+		return "", fmt.Errorf("AZURE_OPENAI_ENDPOINT is not set. It is a repository variable on your own repository; a reusable workflow never inherits variables from SimplyCubed")
+	}
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return "", fmt.Errorf("AZURE_OPENAI_ENDPOINT is not a valid URL: %w", err)
+	}
+	if u.Scheme != "https" || u.Host == "" {
+		return "", fmt.Errorf("AZURE_OPENAI_ENDPOINT must be an https URL like https://<resource>.openai.azure.com, got %q", endpoint)
+	}
+	if os.Getenv("AZURE_OPENAI_API_KEY") == "" {
+		return "", fmt.Errorf("AZURE_OPENAI_API_KEY is not set. It is a repository secret on your own repository; a reusable workflow never inherits secrets from SimplyCubed")
+	}
+	return endpoint, nil
+}
+
+// preflightCmd validates the repo config and engine settings, then exits. A
+// workflow runs it before installing the rest of the toolchain, so a
+// misconfigured repository finds out in seconds and the rules live in one place.
+func preflightCmd(argv []string, stdout io.Writer) error {
+	fs := flag.NewFlagSet("preflight", flag.ContinueOnError)
+	repoDir := fs.String("repo-dir", ".", "path to the target repo checkout")
+	if _, err := parseInterleaved(fs, argv); err != nil {
+		return err
+	}
+	if _, err := config.Load(filepath.Join(*repoDir, ".github", "simplycubed.yml")); err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+	if _, err := engineEnv(); err != nil {
+		return err
+	}
+	fmt.Fprintln(stdout, "preflight ok: config and engine settings are present")
+	return nil
+}
 
 // commonFlags are the flags shared by run and address, plus the resolved config
 // and dependency graph both commands need.
@@ -160,12 +216,9 @@ func prepare(name string, argv []string) (*commonFlags, []string, error) {
 		return nil, nil, fmt.Errorf("load config: %w", err)
 	}
 
-	endpoint := strings.TrimRight(os.Getenv("AZURE_OPENAI_ENDPOINT"), "/")
-	if endpoint == "" {
-		return nil, nil, fmt.Errorf("AZURE_OPENAI_ENDPOINT is not set")
-	}
-	if os.Getenv("AZURE_OPENAI_API_KEY") == "" {
-		return nil, nil, fmt.Errorf("AZURE_OPENAI_API_KEY is not set")
+	endpoint, err := engineEnv()
+	if err != nil {
+		return nil, nil, err
 	}
 
 	codexHome := filepath.Join(*stateDir, "codex-home")

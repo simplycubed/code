@@ -386,3 +386,215 @@ func buildVersionForTest(t *testing.T, version string) string {
 	})
 	return original
 }
+
+func TestEngineEnvValidatesEndpointAndKey(t *testing.T) {
+	set := func(endpoint, key string) {
+		t.Setenv("AZURE_OPENAI_ENDPOINT", endpoint)
+		t.Setenv("AZURE_OPENAI_API_KEY", key)
+	}
+	// A trailing slash is normalized away, because the engine appends a path.
+	set("https://r.openai.azure.com/", "k")
+	got, err := engineEnv()
+	if err != nil || got != "https://r.openai.azure.com" {
+		t.Fatalf("engineEnv() = %q, %v", got, err)
+	}
+	// Each of these otherwise fails deep in the engine, where the message says
+	// nothing about the cause.
+	for name, c := range map[string][2]string{
+		"missing endpoint": {"", "k"},
+		"missing key":      {"https://r.openai.azure.com", ""},
+		"not https":        {"http://r.openai.azure.com", "k"},
+		"no scheme":        {"r.openai.azure.com", "k"},
+		"no host":          {"https://", "k"},
+	} {
+		set(c[0], c[1])
+		if _, err := engineEnv(); err == nil {
+			t.Fatalf("%s: expected an error", name)
+		}
+	}
+}
+
+func TestPreflightCmd(t *testing.T) {
+	writeConfig := func(t *testing.T) string {
+		t.Helper()
+		dir := t.TempDir()
+		path := filepath.Join(dir, ".github", "simplycubed.yml")
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("gate: make check\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return dir
+	}
+
+	t.Run("reports ok when config and engine settings are present", func(t *testing.T) {
+		t.Setenv("AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
+		t.Setenv("AZURE_OPENAI_API_KEY", "k")
+		var out bytes.Buffer
+		if err := preflightCmd([]string{"--repo-dir", writeConfig(t)}, &out); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(out.String(), "preflight ok") {
+			t.Fatalf("output = %q", out.String())
+		}
+	})
+
+	// The whole point of preflight is naming what is wrong, so each failure
+	// asserts the message identifies the thing the operator has to fix.
+	t.Run("names the missing config", func(t *testing.T) {
+		t.Setenv("AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
+		t.Setenv("AZURE_OPENAI_API_KEY", "k")
+		err := preflightCmd([]string{"--repo-dir", t.TempDir()}, io.Discard)
+		if err == nil || !strings.Contains(err.Error(), "load config") {
+			t.Fatalf("err = %v, want a config error", err)
+		}
+	})
+
+	t.Run("names the missing endpoint", func(t *testing.T) {
+		t.Setenv("AZURE_OPENAI_ENDPOINT", "")
+		t.Setenv("AZURE_OPENAI_API_KEY", "k")
+		err := preflightCmd([]string{"--repo-dir", writeConfig(t)}, io.Discard)
+		if err == nil || !strings.Contains(err.Error(), "AZURE_OPENAI_ENDPOINT") {
+			t.Fatalf("err = %v, want the endpoint named", err)
+		}
+	})
+
+	t.Run("rejects an unknown flag", func(t *testing.T) {
+		if err := preflightCmd([]string{"--nope"}, io.Discard); err == nil {
+			t.Fatal("expected an error for an unknown flag")
+		}
+	})
+}
+
+func TestEngineEnvRejectsAnUnparseableEndpoint(t *testing.T) {
+	// A control character makes url.Parse itself fail, which is a different
+	// branch from the scheme and host checks.
+	t.Setenv("AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com/\x7f")
+	t.Setenv("AZURE_OPENAI_API_KEY", "k")
+	if _, err := engineEnv(); err == nil {
+		t.Fatal("expected an error for an unparseable endpoint")
+	}
+}
+
+func TestDispatch(t *testing.T) {
+	// Every command's exit code is part of the contract: a workflow step
+	// distinguishes "you asked for something that does not exist" (2) from
+	// "the thing you asked for failed" (1).
+	t.Run("version prints the version and succeeds", func(t *testing.T) {
+		var out, errOut bytes.Buffer
+		if code := dispatch([]string{"version"}, &out, &errOut); code != 0 {
+			t.Fatalf("exit = %d, want 0", code)
+		}
+		if !strings.Contains(out.String(), buildinfo.Version) {
+			t.Fatalf("stdout = %q, want the version", out.String())
+		}
+	})
+
+	t.Run("no arguments prints usage and exits 2", func(t *testing.T) {
+		var out, errOut bytes.Buffer
+		if code := dispatch(nil, &out, &errOut); code != 2 {
+			t.Fatalf("exit = %d, want 2", code)
+		}
+		if !strings.Contains(errOut.String(), "usage:") {
+			t.Fatalf("stderr = %q, want usage", errOut.String())
+		}
+	})
+
+	t.Run("an unknown command prints usage and exits 2", func(t *testing.T) {
+		var out, errOut bytes.Buffer
+		if code := dispatch([]string{"nope"}, &out, &errOut); code != 2 {
+			t.Fatalf("exit = %d, want 2", code)
+		}
+		if !strings.Contains(errOut.String(), "usage:") {
+			t.Fatalf("stderr = %q, want usage", errOut.String())
+		}
+	})
+
+	t.Run("init reports failure on stderr and exits 1", func(t *testing.T) {
+		var out, errOut bytes.Buffer
+		if code := dispatch([]string{"init", "--nope"}, &out, &errOut); code != 1 {
+			t.Fatalf("exit = %d, want 1", code)
+		}
+		if !strings.Contains(errOut.String(), "error:") {
+			t.Fatalf("stderr = %q, want an error", errOut.String())
+		}
+	})
+
+	// A failing command exits 1 and says why on stderr, which is what an
+	// operator reads out of a workflow log.
+	for _, cmd := range []string{"preflight", "run", "address"} {
+		t.Run(cmd+" reports failure on stderr and exits 1", func(t *testing.T) {
+			t.Setenv("AZURE_OPENAI_ENDPOINT", "")
+			t.Setenv("AZURE_OPENAI_API_KEY", "")
+			var out, errOut bytes.Buffer
+			// An empty directory has no config, so each command fails early.
+			code := dispatch([]string{cmd, "--repo-dir", t.TempDir()}, &out, &errOut)
+			if code != 1 {
+				t.Fatalf("exit = %d, want 1", code)
+			}
+			if !strings.Contains(errOut.String(), "error:") {
+				t.Fatalf("stderr = %q, want an error", errOut.String())
+			}
+		})
+	}
+}
+
+func TestPrepare(t *testing.T) {
+	repoWithConfig := func(t *testing.T) string {
+		t.Helper()
+		dir := t.TempDir()
+		path := filepath.Join(dir, ".github", "simplycubed.yml")
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("gate: make check\nlabelPrefix: sc\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return dir
+	}
+
+	t.Run("builds the dependency graph and returns the positional arguments", func(t *testing.T) {
+		t.Setenv("AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
+		t.Setenv("AZURE_OPENAI_API_KEY", "k")
+		repo := repoWithConfig(t)
+		c, rest, err := prepare("run", []string{"--repo-dir", repo, "--state-dir", t.TempDir(), "o/r#1"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if c.repoDir != repo || c.cfg.Gate != "make check" {
+			t.Fatalf("flags = %+v, cfg.Gate = %q", c, c.cfg.Gate)
+		}
+		if len(rest) != 1 || rest[0] != "o/r#1" {
+			t.Fatalf("positionals = %v, want [o/r#1]", rest)
+		}
+		if c.deps.Runner == nil || c.deps.Forge == nil || c.deps.VCS == nil || c.deps.Worktrees == nil {
+			t.Fatalf("dependency graph is incomplete: %+v", c.deps)
+		}
+	})
+
+	// prepare is the common entry path, so each way the environment is wrong
+	// has to stop here rather than surface later as an engine failure.
+	t.Run("refuses a repo with no config", func(t *testing.T) {
+		t.Setenv("AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
+		t.Setenv("AZURE_OPENAI_API_KEY", "k")
+		if _, _, err := prepare("run", []string{"--repo-dir", t.TempDir()}); err == nil {
+			t.Fatal("expected an error for a repo with no config")
+		}
+	})
+
+	t.Run("refuses a missing engine key", func(t *testing.T) {
+		t.Setenv("AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
+		t.Setenv("AZURE_OPENAI_API_KEY", "")
+		_, _, err := prepare("run", []string{"--repo-dir", repoWithConfig(t)})
+		if err == nil || !strings.Contains(err.Error(), "AZURE_OPENAI_API_KEY") {
+			t.Fatalf("err = %v, want the key named", err)
+		}
+	})
+
+	t.Run("rejects an unknown flag", func(t *testing.T) {
+		if _, _, err := prepare("run", []string{"--nope"}); err == nil {
+			t.Fatal("expected an error for an unknown flag")
+		}
+	})
+}
