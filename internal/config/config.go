@@ -39,6 +39,10 @@ type Config struct {
 	// Engine selects the adapter that writes the code: "codex" (default) or
 	// "claude". The loop, the roles, and the gate are identical either way.
 	Engine string
+	// Review turns on the automated reviewer: after the gate passes, a
+	// read-only reviewer judges the change and its findings go to the fixer
+	// before a human ever sees the pull request. Off by default.
+	Review bool
 }
 
 // Load reads and validates the config file at path.
@@ -83,6 +87,11 @@ func Parse(b []byte) (*Config, error) {
 			switch strings.ToLower(val) {
 			case "codex", "claude":
 				c.Engine = strings.ToLower(val)
+			}
+		case "review":
+			switch strings.ToLower(val) {
+			case "true", "yes", "on", "1":
+				c.Review = true
 			}
 		case "prDescription":
 			// Only the documented value enables it; anything else is the default

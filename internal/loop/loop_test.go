@@ -230,3 +230,110 @@ func TestEscalationWithoutASummaryIsUnchanged(t *testing.T) {
 		t.Fatalf("an empty summary must not add an empty section, got:\n%s", got)
 	}
 }
+
+// The reviewer decides whether a human ever sees the pull request, so each
+// branch is pinned: a trusted pass opens it, findings go to the fixer first, a
+// contradictory verdict is not trusted, and silence is not approval.
+func TestReviewOpensThePRWhenTheVerdictIsTrusted(t *testing.T) {
+	dir := t.TempDir()
+	eng, f := newEngine(dir, enginefake.New(enginefake.Step{Summary: "fix", Apply: writeFixed}))
+	eng.Review = func(context.Context, domain.Issue) (domain.Verdict, bool) {
+		return domain.Verdict{Pass: true, Summary: "Looks right."}, true
+	}
+	res, err := eng.Run(context.Background(), domain.Issue{Repo: "o/r", Number: 1})
+	if err != nil || res.Outcome != OutcomePROpened {
+		t.Fatalf("outcome = %s err = %v", res.Outcome, err)
+	}
+	if !strings.Contains(f.PRBodies[0], "Looks right.") {
+		t.Fatalf("the PR body should carry the review summary: %q", f.PRBodies[0])
+	}
+}
+
+func TestReviewSendsFindingsToTheFixerBeforeOpening(t *testing.T) {
+	dir := t.TempDir()
+	eng, f := newEngine(dir, enginefake.New(
+		enginefake.Step{Summary: "fix", Apply: writeFixed},
+		enginefake.Step{Summary: "second round"},
+	))
+	calls := 0
+	eng.Review = func(context.Context, domain.Issue) (domain.Verdict, bool) {
+		calls++
+		if calls == 1 {
+			return domain.Verdict{Pass: false, Findings: []domain.Finding{
+				{Severity: domain.SeverityBlocker, Problem: "nil deref", Required: "check it"},
+			}}, true
+		}
+		return domain.Verdict{Pass: true, Summary: "Fixed."}, true
+	}
+	var got []domain.ReviewNote
+	eng.FixFindings = func(_ context.Context, _ domain.Issue, notes []domain.ReviewNote) error {
+		got = notes
+		return nil
+	}
+	res, err := eng.Run(context.Background(), domain.Issue{Repo: "o/r", Number: 2})
+	if err != nil || res.Outcome != OutcomePROpened {
+		t.Fatalf("outcome = %s err = %v", res.Outcome, err)
+	}
+	if len(got) != 1 || !strings.Contains(got[0].Body, "nil deref") {
+		t.Fatalf("the fixer should receive the findings, got %+v", got)
+	}
+	if f.PRCount != 1 {
+		t.Fatalf("PRCount = %d, want one PR opened after the fix", f.PRCount)
+	}
+}
+
+// A verdict claiming pass while reporting a blocker contradicts itself. The
+// loop takes the pessimistic reading and does not open the pull request.
+func TestReviewDoesNotTrustAPassCarryingABlocker(t *testing.T) {
+	dir := t.TempDir()
+	eng, f := newEngine(dir, enginefake.New(
+		enginefake.Step{Summary: "fix", Apply: writeFixed},
+		enginefake.Step{Summary: "again"},
+	))
+	eng.Review = func(context.Context, domain.Issue) (domain.Verdict, bool) {
+		return domain.Verdict{Pass: true, Findings: []domain.Finding{
+			{Severity: domain.SeverityBlocker, Problem: "unsafe"},
+		}}, true
+	}
+	fixed := false
+	eng.FixFindings = func(context.Context, domain.Issue, []domain.ReviewNote) error { fixed = true; return nil }
+	_, _ = eng.Run(context.Background(), domain.Issue{Repo: "o/r", Number: 3})
+	if !fixed {
+		t.Fatal("a contradictory verdict must reach the fixer, not the human")
+	}
+	if f.PRCount != 0 {
+		t.Fatal("no pull request should open while a blocker stands")
+	}
+}
+
+// No usable verdict is an absent judgment. It must not block the change
+// forever, and it must not be read as approval either: the human decides.
+func TestReviewFallsBackToTheHumanWhenNoVerdictIsProduced(t *testing.T) {
+	dir := t.TempDir()
+	eng, f := newEngine(dir, enginefake.New(enginefake.Step{Summary: "fix", Apply: writeFixed}))
+	eng.Review = func(context.Context, domain.Issue) (domain.Verdict, bool) {
+		return domain.Verdict{}, false
+	}
+	res, err := eng.Run(context.Background(), domain.Issue{Repo: "o/r", Number: 4})
+	if err != nil || res.Outcome != OutcomePROpened {
+		t.Fatalf("outcome = %s err = %v", res.Outcome, err)
+	}
+	if f.PRCount != 1 {
+		t.Fatal("the change should still reach a human")
+	}
+}
+
+func TestReviewEscalatesWhenItWithholdsAPassWithoutFindings(t *testing.T) {
+	dir := t.TempDir()
+	eng, f := newEngine(dir, enginefake.New(enginefake.Step{Summary: "fix", Apply: writeFixed}))
+	eng.Review = func(context.Context, domain.Issue) (domain.Verdict, bool) {
+		return domain.Verdict{Pass: false}, true
+	}
+	res, _ := eng.Run(context.Background(), domain.Issue{Repo: "o/r", Number: 5})
+	if res.Outcome != OutcomeBlocked {
+		t.Fatalf("outcome = %s, want blocked", res.Outcome)
+	}
+	if f.PRCount != 0 {
+		t.Fatal("no pull request should open")
+	}
+}
