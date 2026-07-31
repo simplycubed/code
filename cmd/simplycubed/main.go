@@ -185,16 +185,18 @@ func newVCS(self string) *vcsgit.Git {
 // exists only so an adopter who has genuinely sandboxed their runners
 // externally can decide that for themselves.
 //
-// Note that the default sandbox uses bubblewrap on Linux, which cannot create a
-// network namespace inside a stock GitHub Actions runner:
+// The default sandbox uses bubblewrap on Linux, which needs an unprivileged
+// user namespace. Ubuntu 24.04 restricts those by AppArmor, so on a stock
+// GitHub runner every command the engine tried died at startup:
 //
 //	bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted
 //
-// Every command the engine tries then fails, including `pwd`, so it reads
-// nothing and changes nothing while still exiting successfully. The answer to
-// that is not to widen the sandbox: it is that the run stops and a human
-// finishes the work. See docs/faq.md, and the self-test, which reports this
-// condition in one minute instead of after a run that appeared to succeed.
+// The engine then read nothing and changed nothing while still exiting
+// successfully, which is why it looked like a silent no-op. The reusable
+// workflow now enables that kernel feature before the engine runs, which lets
+// the sandbox start rather than widening it. A run that still cannot sandbox
+// stops and a human finishes the work; it never falls back to running
+// unconfined. See docs/faq.md and the self-test.
 func newRunner(cfg *config.Config, codexHome string) engine.Runner {
 	if cfg.Engine == "claude" {
 		return claude.New()

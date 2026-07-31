@@ -108,6 +108,25 @@ jobs:
           AZURE_OPENAI_API_KEY: ${{ secrets['azure-openai-api-key'] }}
         run: simplycubed preflight --repo-dir .
 
+      - name: Let the engine sandbox start
+        # The engine sandboxes itself with a vendored bubblewrap, and bubblewrap
+        # needs an unprivileged user namespace. Ubuntu 24.04, which is what a
+        # GitHub runner is, ships an AppArmor policy that forbids one, so every
+        # command the engine tried died at startup:
+        #
+        #   bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted
+        #
+        # The engine then read nothing and changed nothing while still exiting
+        # successfully, which is why this looked like a silent no-op rather than
+        # a failure for as long as it did.
+        #
+        # This enables the kernel feature the sandbox depends on. It is the
+        # opposite of widening the sandbox: with the restriction in place the
+        # sandbox cannot start and fails open, and with it lifted the sandbox
+        # actually confines the engine. Measured both directions on a runner,
+        # same binary, only this setting changing. See docs/faq.md and #99.
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
       - name: Install Codex CLI
         run: npm install -g @openai/codex@0.146.0
 
@@ -176,6 +195,25 @@ jobs:
           AZURE_OPENAI_ENDPOINT: ${{ inputs['azure-openai-endpoint'] }}
           AZURE_OPENAI_API_KEY: ${{ secrets['azure-openai-api-key'] }}
         run: simplycubed preflight --repo-dir .
+
+      - name: Let the engine sandbox start
+        # The engine sandboxes itself with a vendored bubblewrap, and bubblewrap
+        # needs an unprivileged user namespace. Ubuntu 24.04, which is what a
+        # GitHub runner is, ships an AppArmor policy that forbids one, so every
+        # command the engine tried died at startup:
+        #
+        #   bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted
+        #
+        # The engine then read nothing and changed nothing while still exiting
+        # successfully, which is why this looked like a silent no-op rather than
+        # a failure for as long as it did.
+        #
+        # This enables the kernel feature the sandbox depends on. It is the
+        # opposite of widening the sandbox: with the restriction in place the
+        # sandbox cannot start and fails open, and with it lifted the sandbox
+        # actually confines the engine. Measured both directions on a runner,
+        # same binary, only this setting changing. See docs/faq.md and #99.
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
       - name: Install Codex CLI
         run: npm install -g @openai/codex@0.146.0
