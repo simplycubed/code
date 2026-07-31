@@ -1,8 +1,20 @@
 # SimplyCubed Code
 
+[![An agent that runs in your GitHub, not ours. Open source. Your runners, your secrets. A human merges.](docs/assets/simplycubed-code.png)](https://simplycubed.com/code?utm_source=github&utm_medium=readme&utm_campaign=code)
+
 An autonomous coding agent that lives inside your own GitHub. You file an issue, it opens a pull request, and a human decides whether to merge.
 
-> Status: beta. `v0.1.6` is the latest release; expect rough edges. Product overview: [simplycubed.com/code](https://simplycubed.com/code?utm_source=github&utm_medium=readme&utm_campaign=code). See [Status](#status).
+> Beta, at `v0.1.6`. Product overview: [simplycubed.com/code](https://simplycubed.com/code?utm_source=github&utm_medium=readme&utm_campaign=code). See [Status](#status).
+
+### Try it without letting it write anything
+
+```sh
+simplycubed run owner/repo#12 --dry-run
+```
+
+That runs the whole loop, including the model and your own gate. It makes no GitHub writes and never pushes; it prints what it would have done instead.
+
+`simplycubed init --workflow` also writes a self-test into your repository. Dispatch it once and it checks, in your own runner, that the App token resolves to a bot, that it can read what it needs, and that it is denied Actions administration. The install fails if that denial does not hold. Delete the workflow once it passes.
 
 ## What it is
 
@@ -22,7 +34,7 @@ The loop is issue to pull request, driven entirely through GitHub.
 4. A human reviews. If they request changes, a fixer role reads the feedback, makes the changes, re-runs the gate, and pushes back to the same pull request for another look. Only feedback left against the current head is addressed, so the loop never re-litigates a comment it already handled.
 5. A human merges. The agent does not.
 
-A separate read-only reviewer role is defined in the code but is not yet wired into the loop, so today the review in step 4 is the human's. The roadmap below tracks it.
+An automated reviewer runs before step 4 if you turn it on (`review: true`, off by default). It comments; it never approves and never merges. Step 5 is a human either way.
 
 ### Label lifecycle
 
@@ -45,9 +57,43 @@ You can also drive it by comment, addressed to the bot at the start of a line:
 
 Only comments from people with write access are acted on, and only a comment that begins with the mention counts, so quoting an earlier comment never re-triggers a run. Note that a plain pull-request comment is not a review: to run the fixer from a review, submit it through **Files changed → Review changes**.
 
+### What triggers a run
+
+```mermaid
+flowchart LR
+    L["issue labelled sc:go"] --> R["run job"]
+    V["review submitted<br/>OWNER, MEMBER or COLLABORATOR"] --> A["address job"]
+    C["comment starting with<br/>@simplycubed-code"] --> P{"verb?"}
+
+    R --> RC["simplycubed run"]
+    A --> AC["simplycubed address"]
+    P -->|"go"| RC
+    P -->|"address"| AC
+    P -->|"help"| H["prints the commands"]
+    P -->|"anything else"| N["nothing"]
+
+    RC --> PR["pull request opens<br/>a human merges it"]
+    AC --> PR
+```
+
+A plain comment in the conversation box is not a review. To run the fixer from a review, submit it through **Files changed → Review changes**. Every path checks that the person has write access before anything else happens.
+
 ## Running in your own GitHub
 
 The whole thing runs on GitHub Actions, event-driven, with no server and no VM for SimplyCubed to operate. When you install the app and file issues, the work executes on your runners inside your organization.
+
+### What it can do to your repo, and what stops it
+
+It can open a pull request against a branch. That is the strongest action available to it.
+
+What stops it, roughly in order of how much you should trust each one:
+
+1. **It cannot merge, by construction.** The GitHub interface it is built against has no merge method: see [`internal/forge/forge.go`](internal/forge/forge.go). The model is not being asked to follow a rule here. The capability is absent from the code.
+2. The App holds three permissions: contents, pull requests, issues. Not workflows, administration, environments, or secrets. Each job mints its own token, scoped to one repository.
+3. That scope is proved on every run rather than claimed. The workflow calls an Actions-administration endpoint and expects the denial, so your run log carries the evidence.
+4. **The model's shell never holds a GitHub token.** `GH_TOKEN` and `GITHUB_TOKEN` are stripped from the engine's environment before it starts.
+5. Neither engine's "dangerous" bypass flag is set. When a change cannot be made under those constraints, the run stops and a human finishes it. [Why](docs/faq.md).
+6. No deploy credentials, and no path to production. Your branch protection rules decide what happens once the pull request exists.
 
 What this buys you:
 
@@ -160,7 +206,7 @@ gate: make check
 engine: claude
 ```
 
-The first engine adapter targets the Codex CLI running against Azure OpenAI. Today the shipped setup needs an Azure endpoint, an API key, and optionally a deployment name override if you are not using the default `gpt-5.4`. A Claude Code adapter is planned. The `Runner` interface is the seam where other engines plug in.
+The first engine adapter targets the Codex CLI running against Azure OpenAI. Today the shipped setup needs an Azure endpoint, an API key, and optionally a deployment name override if you are not using the default `gpt-5.4`. A Claude Code adapter ships too, behind `engine: claude`. The `Runner` interface is the seam where other engines plug in.
 
 ## Status
 
@@ -173,7 +219,7 @@ Roadmap, roughly in order:
 - Wiring the read-only reviewer role into the loop so a diff is reviewed before it reaches a human.
 - The self-onboarding flow via `init` and `init --workflow`. **Done.**
 - The Codex on Azure OpenAI engine adapter. **Done.**
-- The Claude Code engine adapter.
+- Self-hosted models on Hugging Face.
 
 If you are evaluating it now, read that as beta software rather than a polished product. The core loops work; reviewer wiring is still in progress, and self-onboarding shipped as `init` and `init --workflow`.
 

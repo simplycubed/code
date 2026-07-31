@@ -26,8 +26,13 @@ simplycubed version
 simplycubed init --workflow
 ```
 
-That writes `.github/simplycubed.yml`, writes `.github/workflows/simplycubed.yml`,
-and creates the `sc:*` labels through your local `gh` auth. The files are local
+That writes three files and creates the `sc:*` labels through your local `gh`
+auth:
+
+- `.github/simplycubed.yml`, the repository config
+- `.github/workflows/simplycubed.yml`, the caller workflow
+- `.github/workflows/simplycubed-selftest.yml`, an install check you run once
+  and then delete The files are local
 changes in your repository; nothing is merged or installed remotely for you.
 
 3. Edit `.github/simplycubed.yml` and set a real gate that is already green on
@@ -72,15 +77,63 @@ a setup pull request, and merge it yourself. Setup files are written locally by
 `simplycubed init` and merged by a human, because the runtime holds no
 `workflows` permission and cannot add its own workflow files.
 
-6. File an issue that describes a small change and apply the `sc:go` label.
+6. Check the install before trusting it:
 
-7. Wait for the workflow to open a pull request. Review it like any other PR:
+```sh
+gh workflow run simplycubed-selftest
+```
+
+That runs in your own runner and reports whether the App token resolves to a
+bot, whether it is correctly denied Actions administration, whether a commit is
+possible, and whether the engine can start there. Delete the workflow once it
+passes; normal operation goes through the App and the `sc:go` label.
+
+7. File an issue that describes a small change and apply the `sc:go` label.
+
+8. Wait for the workflow to open a pull request. Review it like any other PR:
 
 - Merge it yourself if it is good.
 - Or request changes; the fixer loop will address feedback on the current head
   and push back to the same branch.
 
 That is the first end-to-end path: issue -> PR -> human merge.
+
+## Where each value goes
+
+The same two Azure values are needed in both places, and setting one does not
+set the other. A repository secret is not visible to your local shell, and a
+reusable workflow inherits nothing from SimplyCubed.
+
+```mermaid
+flowchart TB
+    cfg[".github/simplycubed.yml<br/>gate, engine, review<br/>committed, never holds a key"]
+
+    subgraph local["Local CLI: you are the identity"]
+        L1["your shell<br/>AZURE_OPENAI_ENDPOINT<br/>AZURE_OPENAI_API_KEY"]
+        L2["your gh auth"]
+        L3["simplycubed run / address"]
+        L4["commits and PR authored by you"]
+        L1 --> L3
+        L2 --> L3
+        L3 --> L4
+    end
+
+    subgraph actions["GitHub Actions: the App is the identity"]
+        A1["repository variables<br/>AZURE_OPENAI_ENDPOINT<br/>SIMPLYCUBED_GH_APP_ID"]
+        A2["repository secrets<br/>AZURE_OPENAI_API_KEY<br/>SIMPLYCUBED_GH_APP_PRIVATE_KEY"]
+        A3["per-job installation token<br/>contents, issues, pull requests"]
+        A4["simplycubed run / address"]
+        A5["commits and PR authored by<br/>simplycubed-code[bot]"]
+        A2 --> A3
+        A1 --> A4
+        A2 --> A4
+        A3 --> A4
+        A4 --> A5
+    end
+
+    cfg --> L3
+    cfg --> A4
+```
 
 ## Azure values
 
@@ -144,6 +197,21 @@ passes:
 
 The reusable workflow installs the CLI, exports the endpoint and key for the job,
 and runs `simplycubed run` or `simplycubed address`.
+
+## Watching it run before it writes
+
+Two commands answer "is this configured correctly" without changing anything.
+
+`simplycubed preflight` validates the repository config and the engine settings
+and exits. It is what the workflow runs before installing the rest of the
+toolchain, so a misconfigured repository finds out in seconds.
+
+`simplycubed run owner/repo#N --dry-run` runs the whole loop, including the
+engine and your real gate, and skips the push and every GitHub write. It prints
+what it would have done instead, and in Actions writes that to the run summary.
+
+If something goes wrong, [troubleshooting.md](troubleshooting.md) starts from
+the symptom.
 
 ## Optional model override
 
