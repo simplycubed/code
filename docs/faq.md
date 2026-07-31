@@ -58,10 +58,14 @@ open. Nothing in this repository sets it.
 
 ## Are the `sc:` labels created for me?
 
-Not automatically, yet. For now the labels are created once when you onboard a
-repo. The planned self-onboarding flow will propose them (and the config and
-workflow files) as a pull request you merge, so nothing is created behind your
-back. Until then, creating the six state labels is a one-time setup step.
+Yes, once. `simplycubed init --workflow` creates the six state labels through
+your own `gh` auth, and writes the config, the caller workflow, and the install
+self-test as local files.
+
+Nothing is created behind your back and nothing is merged for you. You open that
+setup pull request and merge it yourself, because the App holds no `workflows`
+permission and cannot add its own workflow files.
+
 
 ## The agent won't propose anything. Why?
 

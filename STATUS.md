@@ -27,9 +27,8 @@ The Actions runtime authenticates as the `simplycubed-code[bot]` GitHub App.
 Each job mints its own installation token scoped to one repository with
 `contents`, `issues`, and `pull-requests` permissions only.
 
-`v0.1.5` is the current release. `go install
-github.com/simplycubed/code/cmd/simplycubed@v0.1.5` works today. `v0.1.2` and
-`v0.1.4` are retracted in `go.mod` because those tags pointed at the wrong
+`v0.1.6` is the current release. `go install
+github.com/simplycubed/code/cmd/simplycubed@v0.1.6` works today. `v0.1.2` and `v0.1.4` are retracted in `go.mod` because those tags pointed at the wrong
 commits.
 
 Both loops were dogfooded: the issue-to-PR loop produced the merged
@@ -40,15 +39,19 @@ dependency-upgrade PR on `charlesgreen/gsm`.
 ```
 cmd/simplycubed/      CLI: version, init, preflight, run, address
 internal/domain/      core types (Role, Issue, RunRequest, ReviewFeedback, Verdict)
-internal/engine/      Runner interface + fake; codex/ adapter (Azure OpenAI)
+internal/engine/      Runner interface + fake; codex/ (Azure OpenAI) and claude/ adapters
 internal/gate/        runs the repo gate command; exit code, output tail, signature
-internal/config/      .github/simplycubed.yml; refuses a missing gate; attribution flag
+internal/config/      .github/simplycubed.yml; refuses a missing gate; engine, review,
+                      prDescription, attribution
 internal/state/       sc: label lifecycle with mutual exclusion
 internal/roles/       implementer, reviewer, fixer as data; bounds; untrusted-input delimiting
 internal/loop/        goal -> act -> grade -> repeat; Run (issue->PR) and Fix (fix-on-request)
 internal/forge/       GitHub side as an interface (no merge method); gh/ adapter + recording fake
 internal/vcs/git/     commit, push, and sync-to-PR-head
 internal/describe/    generated PR walkthrough, changes table, and sequence diagram
+internal/verdict/     the reviewer verdict: schema, validation, findings for the fixer
+internal/command/     comment commands (@simplycubed-code go | address | help)
+internal/forge/dryrun/ records the GitHub writes a dry run skips
 internal/attribution/ the SimplyCubed Code marker on generated commits and PRs
 internal/ledger/      append-only JSONL run events
 internal/worktree/    an isolated git worktree per issue
@@ -69,16 +72,11 @@ via `.github/workflows/check.yml`; the required status check on `main` is the
 
 ## What is next
 
-- **Wire the read-only reviewer role into the loop.** The `Reviewer` role and the
-  `Verdict` type exist, but no loop calls the reviewer yet, so today the review is
-  the human's. Wiring it (reviewer emits a structured verdict, findings feed the
-  fixer, comment-only, never a bot approval) is the next core-loop step. The
-  README says so plainly rather than implying it is already done.
-- **Engine roadmap:** Codex on Azure (now) -> a Claude Code adapter -> Hugging
-  Face self-hosted models. Each is another `Runner` implementation; no core
-  rework.
+- **Engine roadmap:** Codex on Azure and Claude Code both ship. Self-hosted
+  models on Hugging Face are next. Each is another `Runner` implementation; no
+  core rework.
 
 ## Deliberately not done (maintainer decisions)
 
-- **CI actions are pinned by tag, not commit SHA.** Pin by SHA before this goes
-  past scaffolding.
+Nothing outstanding. The two items that lived here, SHA-pinned actions and a
+per-role bot identity, both shipped in v0.1.3 and v0.1.6.
