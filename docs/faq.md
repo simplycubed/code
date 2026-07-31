@@ -56,6 +56,45 @@ deliberately cannot push.
 externally sandboxed their runners can widen it themselves, with their eyes
 open. Nothing in this repository sets it.
 
+## Then why does the workflow change a kernel setting before the engine runs?
+
+Because the sandbox could not start without it, and a sandbox that cannot start
+is worse than one that can.
+
+The reusable workflow runs this before the engine:
+
+```sh
+sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+```
+
+Codex confines itself with a bundled bubblewrap, and bubblewrap builds its
+sandbox out of an unprivileged user namespace. Ubuntu 24.04, which is what a
+GitHub runner is, ships an AppArmor policy that forbids unprivileged processes
+from creating one. So the sandbox died at startup on every single run:
+
+```
+bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted
+```
+
+Every command the engine tried then failed, including `pwd`. It read nothing,
+changed nothing, and still exited successfully, which is why this looked like an
+agent that quietly did no work rather than one that was never able to start.
+
+This was measured rather than guessed. On a runner, with the same bubblewrap
+binary and only this setting changing: restriction on, the error above;
+restriction off, the sandbox starts and runs commands; restriction back on, the
+error returns.
+
+Read the setting name carefully, because it inverts easily. This *enables* the
+kernel feature the sandbox is built from. It is the opposite of the flags above:
+those turn the sandbox off, and this is what allows it to be on at all. The
+alternative was not "a safer run", it was an engine confined by nothing because
+its confinement never loaded.
+
+It applies to the runner, which is an ephemeral VM that exists for this one job
+and is destroyed after it. Nothing about the host is changed and nothing about
+the App's permissions is widened.
+
 ## Are the `sc:` labels created for me?
 
 Yes, once. `simplycubed init --workflow` creates the six state labels through

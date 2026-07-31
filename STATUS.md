@@ -5,8 +5,11 @@ maintainer does next. Read this first. For the product overview see the README.
 
 ## What works today
 
-Two loops run end to end on the Codex-on-Azure engine (GPT-5.4), both from the
-CLI and inside an adopter's own GitHub Actions runtime:
+Two loops run end to end on the Codex-on-Azure engine (GPT-5.4) from the CLI.
+The GitHub Actions runtime runs them too, as of #99: before that fix the engine's
+sandbox could not start on an Ubuntu 24.04 runner, so every Actions run escalated
+without proposing anything, and no pull request had ever been opened from
+Actions.
 
 - **Issue to pull request** (`simplycubed run <owner/repo#N>`). The implementer
   works in an isolated worktree, retries against the repo's own gate until it
