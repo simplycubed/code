@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"flag"
 	"github.com/simplycubed/code/internal/config"
 	"github.com/simplycubed/code/internal/domain"
@@ -1069,4 +1070,57 @@ func TestRunAndAddressRequireARef(t *testing.T) {
 			t.Fatalf("%s with no ref: err = %v, want a missing-ref error", name, err)
 		}
 	}
+}
+
+func TestAnswerPathEdges(t *testing.T) {
+	// Driven by hand with no ref, there is nothing to answer on, so the local
+	// echo is the whole answer and it must not be an error.
+	t.Run("no ref means echo only", func(t *testing.T) {
+		f := stubCommentForge(t, nil)
+		var out bytes.Buffer
+		if err := commandCmd([]string{"--body", "@simplycubed-code help"}, &out); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(f.Comments) != 0 {
+			t.Fatalf("nothing to post to, posted: %v", f.Comments)
+		}
+		if !strings.Contains(out.String(), "@simplycubed-code go") {
+			t.Fatalf("the answer should still reach stdout, got %q", out.String())
+		}
+	})
+
+	// A lookup failure must not be silently treated as "this is an issue",
+	// which would send the fixer at the wrong surface anyway.
+	t.Run("a failed surface lookup is an error", func(t *testing.T) {
+		prev := newCommentForge
+		newCommentForge = func() forge2.Forge {
+			return &forgefake.Forge{IsPRErr: errors.New("github said no")}
+		}
+		t.Cleanup(func() { newCommentForge = prev })
+		var out bytes.Buffer
+		err := commandCmd([]string{"--body", "@simplycubed-code address", "o/r#1"}, &out)
+		if err == nil {
+			t.Fatal("want an error when the surface cannot be resolved")
+		}
+		if !strings.Contains(err.Error(), "resolve o/r#1") {
+			t.Fatalf("the error should name what it could not resolve, got: %v", err)
+		}
+		// The same must hold on the reply path, which help and an unrecognised
+		// comment both take.
+		if err := commandCmd([]string{"--body", "@simplycubed-code help", "o/r#1"}, &out); err == nil {
+			t.Fatal("want an error on the reply path too")
+		}
+	})
+
+	t.Run("the dry-run environment variable is honoured", func(t *testing.T) {
+		t.Setenv("SIMPLYCUBED_DRY_RUN", "1")
+		f := stubCommentForge(t, nil)
+		var out bytes.Buffer
+		if err := commandCmd([]string{"--body", "@simplycubed-code address", "o/r#1"}, &out); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(f.Comments) != 0 {
+			t.Fatalf("a dry run must post nothing, posted: %v", f.Comments)
+		}
+	})
 }

@@ -285,3 +285,53 @@ func TestWhoami(t *testing.T) {
 		t.Fatal("an empty login must be an error")
 	}
 }
+
+// GitHub numbers issues and pull requests from one sequence, so the only way to
+// tell them apart is that the issues endpoint carries a pull_request object for
+// one and not the other. Both directions matter: a false negative sends the
+// fixer at an issue, which is the failure #98 was filed for.
+func TestIsPullRequest(t *testing.T) {
+	ctx := context.Background()
+	for name, tc := range map[string]struct {
+		payload string
+		want    bool
+	}{
+		"a pull request carries the pull_request object": {
+			payload: `{"number":7,"pull_request":{"url":"https://api.github.com/repos/o/r/pulls/7"}}`,
+			want:    true,
+		},
+		"a plain issue does not": {
+			payload: `{"number":7,"title":"something"}`,
+			want:    false,
+		},
+		"an explicit null is not a pull request": {
+			payload: `{"number":7,"pull_request":null}`,
+			want:    false,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := &Forge{Bin: stubGHReplying(t, tc.payload, 0)}
+			got, err := f.IsPullRequest(ctx, "o/r", 7)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("IsPullRequest = %v, want %v", got, tc.want)
+			}
+		})
+	}
+
+	t.Run("a failing call is an error, not a guess", func(t *testing.T) {
+		f := &Forge{Bin: stubGHReplying(t, "Not Found", 1)}
+		if _, err := f.IsPullRequest(ctx, "o/r", 7); err == nil {
+			t.Fatal("want an error when gh fails, so the caller does not treat a lookup failure as an issue")
+		}
+	})
+
+	t.Run("unreadable output is an error", func(t *testing.T) {
+		f := &Forge{Bin: stubGHReplying(t, "not json", 0)}
+		if _, err := f.IsPullRequest(ctx, "o/r", 7); err == nil {
+			t.Fatal("want a parse error")
+		}
+	})
+}
