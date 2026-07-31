@@ -756,3 +756,61 @@ func TestInitWithWorkflowIsIdempotent(t *testing.T) {
 		t.Fatalf("the adopter's edit must survive: %q %v", got, err)
 	}
 }
+
+func TestTakeBody(t *testing.T) {
+	// The other flags belong to run and address and must survive untouched,
+	// or routing a comment would drop --actor and skip authorization.
+	for name, tc := range map[string]struct {
+		argv     []string
+		wantBody string
+		wantRest []string
+	}{
+		"separate value": {
+			[]string{"--body", "@simplycubed-code go", "--actor", "me", "o/r#1"},
+			"@simplycubed-code go", []string{"--actor", "me", "o/r#1"},
+		},
+		"equals form": {
+			[]string{"--body=@simplycubed-code address", "--dry-run", "o/r#2"},
+			"@simplycubed-code address", []string{"--dry-run", "o/r#2"},
+		},
+		"absent": {
+			[]string{"--actor", "me", "o/r#1"}, "", []string{"--actor", "me", "o/r#1"},
+		},
+	} {
+		body, rest, err := takeBody(tc.argv)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if body != tc.wantBody {
+			t.Fatalf("%s: body = %q, want %q", name, body, tc.wantBody)
+		}
+		if strings.Join(rest, " ") != strings.Join(tc.wantRest, " ") {
+			t.Fatalf("%s: rest = %v, want %v", name, rest, tc.wantRest)
+		}
+	}
+	if _, _, err := takeBody([]string{"--body"}); err == nil {
+		t.Fatal("a --body with no value must error rather than silently parse as empty")
+	}
+}
+
+// The parser exists so that a comment the agent does not understand does
+// nothing. Before this was wired, any comment beginning with the mention
+// started a full run, including one asking it not to.
+func TestCommandCmdDoesNotRunOnUnrecognisedComments(t *testing.T) {
+	for _, body := range []string{
+		"@simplycubed-code please do not do this one",
+		"thanks @simplycubed-code go",
+		"@simplycubed-code",
+	} {
+		var out bytes.Buffer
+		// A repo-dir that has no config would make a real run fail loudly, so
+		// reaching one is detectable.
+		err := commandCmd([]string{"--body", body, "--repo-dir", t.TempDir(), "o/r#1"}, &out)
+		if err != nil {
+			t.Fatalf("%q should be a quiet no-op, got: %v", body, err)
+		}
+		if !strings.Contains(out.String(), "nothing to do") {
+			t.Fatalf("%q should report nothing to do, got: %q", body, out.String())
+		}
+	}
+}

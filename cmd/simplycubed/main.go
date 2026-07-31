@@ -206,24 +206,47 @@ func newRunner(cfg *config.Config, codexHome string) engine.Runner {
 	return r
 }
 
+// takeBody removes --body (in either form) from argv and returns it with the
+// remaining arguments.
+func takeBody(argv []string) (body string, rest []string, err error) {
+	for i := 0; i < len(argv); i++ {
+		a := argv[i]
+		switch {
+		case a == "--body" || a == "-body":
+			if i+1 >= len(argv) {
+				return "", nil, fmt.Errorf("--body requires a value")
+			}
+			body = argv[i+1]
+			i++
+		case strings.HasPrefix(a, "--body="), strings.HasPrefix(a, "-body="):
+			_, v, _ := strings.Cut(a, "=")
+			body = v
+		default:
+			rest = append(rest, a)
+		}
+	}
+	return body, rest, nil
+}
+
 // commandCmd routes a comment addressed to the agent to the matching loop. The
 // comment body is untrusted, so it is parsed into a fixed vocabulary here and
 // never interpreted: an unrecognised comment does nothing at all.
 func commandCmd(argv []string, stdout io.Writer) error {
-	fs := flag.NewFlagSet("command", flag.ContinueOnError)
-	body := fs.String("body", "", "the comment body that triggered this run")
-	rest, err := parseInterleaved(fs, argv)
+	// --body is pulled out by hand and everything else is forwarded untouched,
+	// because run and address own the rest of the flags. Parsing them here would
+	// mean maintaining a second copy of that flag set.
+	body, rest, err := takeBody(argv)
 	if err != nil {
 		return err
 	}
-	switch command.Parse(*body) {
+	switch command.Parse(body) {
 	case command.Help:
 		fmt.Fprintln(stdout, command.HelpText)
 		return nil
 	case command.Go:
-		return runCmd(append([]string{}, rest...))
+		return runCmd(rest)
 	case command.Address:
-		return addressCmd(append([]string{}, rest...))
+		return addressCmd(rest)
 	default:
 		fmt.Fprintln(stdout, "no command recognised in that comment; nothing to do")
 		return nil
