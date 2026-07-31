@@ -4,7 +4,7 @@
 
 An autonomous coding agent that lives inside your own GitHub. You file an issue, it opens a pull request, and a human decides whether to merge.
 
-> Beta, at `v0.1.8`. Product overview: [simplycubed.com/code](https://simplycubed.com/code?utm_source=github&utm_medium=readme&utm_campaign=code). See [Status](#status).
+> Beta, at `v0.1.9`. Product overview: [simplycubed.com/code](https://simplycubed.com/code?utm_source=github&utm_medium=readme&utm_campaign=code). See [Status](#status).
 
 ### Try it without letting it write anything
 
@@ -115,7 +115,7 @@ Start with the adopter quickstart in [docs/setup.md](docs/setup.md). It covers t
 Install the pinned release you want to run:
 
 ```sh
-go install github.com/simplycubed/code/cmd/simplycubed@v0.1.8
+go install github.com/simplycubed/code/cmd/simplycubed@v0.1.9
 simplycubed version
 ```
 
@@ -210,7 +210,7 @@ The first engine adapter targets the Codex CLI running against Azure OpenAI. Tod
 
 ## Status
 
-Beta, and honest about it. Two loops run end to end via the CLI on the Codex-on-Azure engine: issue to pull request, and fix-on-request (a human requests changes, the fixer addresses them and pushes back). `v0.1.8` is the latest release and you should still expect rough edges.
+Beta, and honest about it. Two loops run end to end via the CLI on the Codex-on-Azure engine: issue to pull request, and fix-on-request (a human requests changes, the fixer addresses them and pushes back). `v0.1.9` is the latest release and you should still expect rough edges.
 
 Roadmap, roughly in order:
 

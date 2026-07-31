@@ -30,16 +30,21 @@ The Actions runtime authenticates as the `simplycubed-code[bot]` GitHub App.
 Each job mints its own installation token scoped to one repository with
 `contents`, `issues`, and `pull-requests` permissions only.
 
-`v0.1.8` is the current release. `go install
-github.com/simplycubed/code/cmd/simplycubed@v0.1.8` works today. `v0.1.2` and `v0.1.4` are retracted in `go.mod` because those tags pointed at the wrong
+`v0.1.9` is the current release. `go install
+github.com/simplycubed/code/cmd/simplycubed@v0.1.9` works today. `v0.1.2` and `v0.1.4` are retracted in `go.mod` because those tags pointed at the wrong
 commits.
 
-Do not use `v0.1.7`. Its copy of the reusable workflow has a duplicate `env:`
-key, which GitHub refuses to load, so every run under it fails in about a second
-without starting a job. `v0.1.8` is the fix.
+Upgrade from anything earlier. `v0.1.7` has a duplicate `env:` key in its copy
+of the reusable workflow, which GitHub refuses to load, so every run under it
+fails in about a second without starting a job. `v0.1.8` loads and runs, but its
+engine sandbox cannot start on an Ubuntu 24.04 runner, so every Actions run
+under it escalates without proposing anything. `v0.1.9` is the first release
+whose Actions runtime can do work.
 
-Both loops were dogfooded: the issue-to-PR loop produced the merged
-dependency-upgrade PR on `charlesgreen/gsm`.
+Both loops are dogfooded here. The issue-to-PR loop, running in this
+repository's own Actions, produced PR #102 against issue #95: the fix, the
+tests, and the documentation for it, reviewed and merged by a human. That is the
+first pull request the agent has opened from Actions.
 
 ## Layers (all green under `make check`)
 

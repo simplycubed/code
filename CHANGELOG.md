@@ -3,6 +3,46 @@
 All notable changes are recorded here and summarized again in the matching
 GitHub release notes for each tag.
 
+## v0.1.9
+
+- **The GitHub Actions runtime does the work now.** Until this release the
+  issue-to-PR loop had never once produced a pull request from Actions, on this
+  repository or any other. The engine confines itself with a bundled bubblewrap,
+  bubblewrap builds its sandbox from an unprivileged user namespace, and Ubuntu
+  24.04 forbids those by AppArmor policy, so the sandbox died at startup on
+  every run:
+
+  ```
+  bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted
+  ```
+
+  Every command the engine tried then failed, including `pwd`, so it read
+  nothing and changed nothing while still exiting successfully. That is why this
+  presented for so long as an agent quietly declining to work rather than one
+  that had never been able to start. The workflow now enables the kernel feature
+  the sandbox is built from, which reads like a weakening and is the reverse:
+  with the restriction in place the engine was confined by nothing, because its
+  confinement never loaded. Measured on a runner in both directions, same
+  binary, only that setting changing. None of the engines' own "dangerous" flags
+  are set, here or anywhere.
+- Comment commands answer on the thread instead of in a log nobody opens.
+  `@simplycubed-code help` produced the right text and printed it inside the
+  runner, so the person who asked saw silence. Worse, `address` on an issue ran
+  anyway and failed two layers down with a raw GraphQL error, because nothing
+  checked that a pull-request verb had been aimed at a pull request. The agent
+  now resolves which surface a comment arrived on, answers with the verb that
+  does apply, and stays green: someone using the wrong word is not a failure. A
+  comment that merely mentions the agent in passing still says nothing at all.
+- `engine: claude` no longer demands Azure credentials it never uses. The
+  adapter was selectable and unusable, because the CLI required an Azure
+  endpoint and key whatever engine was chosen, and then wrote a Codex provider
+  config the Claude path never reads. Both are now conditional on the engine.
+  This is the local CLI path; the reusable workflow still installs only the
+  Codex CLI, which is tracked separately.
+- The repository's own comment job installs the commit under test rather than
+  the last release, matching the two jobs beside it. It was the one path whose
+  regressions could not be caught before they shipped.
+
 ## v0.1.8
 
 - **The Actions runtime was dead in `v0.1.7` and is fixed here.** The comment
