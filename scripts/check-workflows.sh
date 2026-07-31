@@ -16,12 +16,43 @@ if grep -rIn --exclude-dir=.git -E '^(<{7}|={7}|>{7})( |$)' . 2>/dev/null; then
   fail=1
 fi
 
-# Workflow files have to parse. Without this nothing in the gate reads them.
+# Workflow files have to parse, and no mapping may repeat a key. Duplicate keys
+# matter more than they look: yaml.safe_load accepts them and keeps the last one,
+# so a second `env:` in a step silently discards the first. GitHub is stricter
+# and refuses to start the run at all. That combination is the worst one, a green
+# gate and a workflow that never executes, and it is how v0.1.7 shipped with
+# GH_TOKEN and both Azure variables dropped from the step that needs them.
 for f in .github/workflows/*.yml docs/templates/*.yml cmd/simplycubed/*.yml.tmpl; do
   [ -e "$f" ] || continue
   # The embedded template carries a placeholder tag that is substituted at
   # render time; it is still valid YAML.
-  if ! python3 -c "import sys,yaml; yaml.safe_load(open(sys.argv[1]))" "$f" 2>/dev/null; then
+  if ! python3 - "$f" <<'PY' 2>&1
+import sys, yaml
+
+class StrictLoader(yaml.SafeLoader):
+    pass
+
+def no_duplicates(loader, node, deep=False):
+    seen = set()
+    for key_node, _ in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        if key in seen:
+            raise yaml.YAMLError(
+                "duplicate key %r at line %d" % (key, key_node.start_mark.line + 1)
+            )
+        seen.add(key)
+    return yaml.SafeLoader.construct_mapping(loader, node, deep)
+
+StrictLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, no_duplicates
+)
+
+try:
+    yaml.load(open(sys.argv[1]), Loader=StrictLoader)
+except Exception as exc:
+    sys.exit(str(exc))
+PY
+  then
     echo "not valid YAML: $f" >&2
     fail=1
   fi

@@ -131,7 +131,7 @@ gate:
 `
 
 const (
-	latestKnownWorkflowTag = "v0.1.7"
+	latestKnownWorkflowTag = "v0.1.8"
 	callerWorkflowTagToken = "__SIMPLYCUBED_TAG__"
 	simplycubedAppLogin    = "simplycubed-code[bot]"
 )
@@ -531,7 +531,7 @@ func initCmd(argv []string, stdout io.Writer) error {
 	fmt.Fprintln(stdout, "  - disable the App webhook, set install visibility to Any account, and install it on the repo")
 	fmt.Fprintln(stdout, "  - write the real gate in .github/simplycubed.yml")
 	fmt.Fprintln(stdout, "  - verify that gate is green on your main branch")
-	fmt.Fprintln(stdout, "  - set the SIMPLYCUBED_GH_APP_ID repo variable")
+	fmt.Fprintln(stdout, "  - set the SIMPLYCUBED_GH_APP_CLIENT_ID repo variable to the App Client ID, the Iv23 string on the App settings page")
 	fmt.Fprintln(stdout, "  - add the SIMPLYCUBED_GH_APP_PRIVATE_KEY repo secret with the full PEM, including BEGIN/END lines")
 	fmt.Fprintln(stdout, "  - set the AZURE_OPENAI_ENDPOINT repo variable")
 	fmt.Fprintln(stdout, "  - add the AZURE_OPENAI_API_KEY repo secret")

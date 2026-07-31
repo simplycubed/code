@@ -4,7 +4,7 @@
 
 An autonomous coding agent that lives inside your own GitHub. You file an issue, it opens a pull request, and a human decides whether to merge.
 
-> Beta, at `v0.1.7`. Product overview: [simplycubed.com/code](https://simplycubed.com/code?utm_source=github&utm_medium=readme&utm_campaign=code). See [Status](#status).
+> Beta, at `v0.1.8`. Product overview: [simplycubed.com/code](https://simplycubed.com/code?utm_source=github&utm_medium=readme&utm_campaign=code). See [Status](#status).
 
 ### Try it without letting it write anything
 
@@ -115,7 +115,7 @@ Start with the adopter quickstart in [docs/setup.md](docs/setup.md). It covers t
 Install the pinned release you want to run:
 
 ```sh
-go install github.com/simplycubed/code/cmd/simplycubed@v0.1.7
+go install github.com/simplycubed/code/cmd/simplycubed@v0.1.8
 simplycubed version
 ```
 
@@ -140,7 +140,7 @@ To run the loop inside your own GitHub Actions:
    Install it on the repo.
 2. In the adopter repo, run `simplycubed init --workflow`. That writes `.github/simplycubed.yml`, writes `.github/workflows/simplycubed.yml` pinned to a released reusable-workflow tag, and creates the `sc:*` labels through your local `gh` auth.
 3. Fill in the real `gate:` in `.github/simplycubed.yml`.
-4. Add repository variable `SIMPLYCUBED_GH_APP_ID`, repository secret `SIMPLYCUBED_GH_APP_PRIVATE_KEY`, repository variable `AZURE_OPENAI_ENDPOINT`, and repository secret `AZURE_OPENAI_API_KEY`.
+4. Add repository variable `SIMPLYCUBED_GH_APP_CLIENT_ID` (the App Client ID, the `Iv23` string on the App settings page), repository secret `SIMPLYCUBED_GH_APP_PRIVATE_KEY`, repository variable `AZURE_OPENAI_ENDPOINT`, and repository secret `AZURE_OPENAI_API_KEY`.
    These are per-repository and are never inherited from SimplyCubed: a reusable workflow runs with the calling repository's own variables and secrets, so you bring your own Azure endpoint and key, and pay for your own tokens.
    The private key secret must be the full PEM contents, including the `-----BEGIN` and `-----END` lines.
 5. Open a setup pull request in the adopter repo and merge it yourself. Setup files are written locally by `simplycubed init` and merged by a human, because the runtime holds no `workflows` permission and cannot add its own workflow files.
@@ -210,7 +210,7 @@ The first engine adapter targets the Codex CLI running against Azure OpenAI. Tod
 
 ## Status
 
-Beta, and honest about it. Two loops run end to end via the CLI on the Codex-on-Azure engine: issue to pull request, and fix-on-request (a human requests changes, the fixer addresses them and pushes back). `v0.1.7` is the latest release and you should still expect rough edges.
+Beta, and honest about it. Two loops run end to end via the CLI on the Codex-on-Azure engine: issue to pull request, and fix-on-request (a human requests changes, the fixer addresses them and pushes back). `v0.1.8` is the latest release and you should still expect rough edges.
 
 Roadmap, roughly in order:
 
