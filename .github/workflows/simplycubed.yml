@@ -112,7 +112,18 @@ jobs:
         # which is the CLI's default base. The CLI resolves that case on its own
         # now, but naming the branch the event came from is exact rather than
         # inferred.
-        run: simplycubed run ${{ inputs['dry-run'] && '--dry-run' || '' }} "${GITHUB_REPOSITORY}#${{ inputs['issue-number'] }}" --actor "${{ inputs['actor-login'] }}" --model "${{ inputs.model }}" --base "origin/${{ github.event.repository.default_branch }}" --repo-dir .
+        env:
+          COMMENT_BODY: ${{ inputs['comment-body'] }}
+        # A comment goes through the parser, which recognises a fixed vocabulary
+        # and does nothing otherwise. Without this every comment beginning with
+        # the mention would start a full run, including "help" and including a
+        # comment asking it NOT to proceed.
+        run: |
+          if [ -n "${COMMENT_BODY}" ]; then
+            simplycubed command ${{ inputs['dry-run'] && '--dry-run' || '' }} --body "${COMMENT_BODY}" "${GITHUB_REPOSITORY}#${{ inputs['issue-number'] }}" --actor "${{ inputs['actor-login'] }}" --model "${{ inputs.model }}" --base "origin/${{ github.event.repository.default_branch }}" --repo-dir .
+          else
+            simplycubed run ${{ inputs['dry-run'] && '--dry-run' || '' }} "${GITHUB_REPOSITORY}#${{ inputs['issue-number'] }}" --actor "${{ inputs['actor-login'] }}" --model "${{ inputs.model }}" --base "origin/${{ github.event.repository.default_branch }}" --repo-dir .
+          fi
 
   address:
     if: ${{ inputs['pr-number'] != '' }}
@@ -166,4 +177,11 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           AZURE_OPENAI_ENDPOINT: ${{ inputs['azure-openai-endpoint'] }}
           AZURE_OPENAI_API_KEY: ${{ secrets['azure-openai-api-key'] }}
-        run: simplycubed address ${{ inputs['dry-run'] && '--dry-run' || '' }} "${GITHUB_REPOSITORY}#${{ inputs['pr-number'] }}" --actor "${{ inputs['actor-login'] }}" --model "${{ inputs.model }}" --repo-dir .
+        env:
+          COMMENT_BODY: ${{ inputs['comment-body'] }}
+        run: |
+          if [ -n "${COMMENT_BODY}" ]; then
+            simplycubed command ${{ inputs['dry-run'] && '--dry-run' || '' }} --body "${COMMENT_BODY}" "${GITHUB_REPOSITORY}#${{ inputs['pr-number'] }}" --actor "${{ inputs['actor-login'] }}" --model "${{ inputs.model }}" --repo-dir .
+          else
+            simplycubed address ${{ inputs['dry-run'] && '--dry-run' || '' }} "${GITHUB_REPOSITORY}#${{ inputs['pr-number'] }}" --actor "${{ inputs['actor-login'] }}" --model "${{ inputs.model }}" --repo-dir .
+          fi

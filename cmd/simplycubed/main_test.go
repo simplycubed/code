@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"context"
 	"flag"
+	"github.com/simplycubed/code/internal/config"
+	"github.com/simplycubed/code/internal/engine/claude"
+	"github.com/simplycubed/code/internal/engine/codex"
 	"github.com/simplycubed/code/internal/forge/dryrun"
 	forgefake "github.com/simplycubed/code/internal/forge/fake"
 	vcsgit "github.com/simplycubed/code/internal/vcs/git"
@@ -492,6 +495,17 @@ func TestEngineEnvRejectsAnUnparseableEndpoint(t *testing.T) {
 	}
 }
 
+func TestDispatchRoutesCommand(t *testing.T) {
+	var out, errOut bytes.Buffer
+	// help is the one command that needs nothing else configured.
+	if code := dispatch([]string{"command", "--body", "@simplycubed-code help"}, &out, &errOut); code != 0 {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	if !strings.Contains(out.String(), "@simplycubed-code go") {
+		t.Fatalf("stdout = %q, want the help text", out.String())
+	}
+}
+
 func TestDispatch(t *testing.T) {
 	// Every command's exit code is part of the contract: a workflow step
 	// distinguishes "you asked for something that does not exist" (2) from
@@ -754,5 +768,155 @@ func TestInitWithWorkflowIsIdempotent(t *testing.T) {
 	got, err := os.ReadFile(selftest)
 	if err != nil || !strings.Contains(string(got), "edited by the adopter") {
 		t.Fatalf("the adopter's edit must survive: %q %v", got, err)
+	}
+}
+
+func TestTakeBody(t *testing.T) {
+	// The other flags belong to run and address and must survive untouched,
+	// or routing a comment would drop --actor and skip authorization.
+	for name, tc := range map[string]struct {
+		argv     []string
+		wantBody string
+		wantRest []string
+	}{
+		"separate value": {
+			[]string{"--body", "@simplycubed-code go", "--actor", "me", "o/r#1"},
+			"@simplycubed-code go", []string{"--actor", "me", "o/r#1"},
+		},
+		"equals form": {
+			[]string{"--body=@simplycubed-code address", "--dry-run", "o/r#2"},
+			"@simplycubed-code address", []string{"--dry-run", "o/r#2"},
+		},
+		"absent": {
+			[]string{"--actor", "me", "o/r#1"}, "", []string{"--actor", "me", "o/r#1"},
+		},
+	} {
+		body, rest, err := takeBody(tc.argv)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if body != tc.wantBody {
+			t.Fatalf("%s: body = %q, want %q", name, body, tc.wantBody)
+		}
+		if strings.Join(rest, " ") != strings.Join(tc.wantRest, " ") {
+			t.Fatalf("%s: rest = %v, want %v", name, rest, tc.wantRest)
+		}
+	}
+	if _, _, err := takeBody([]string{"--body"}); err == nil {
+		t.Fatal("a --body with no value must error rather than silently parse as empty")
+	}
+}
+
+// The parser exists so that a comment the agent does not understand does
+// nothing. Before this was wired, any comment beginning with the mention
+// started a full run, including one asking it not to.
+func TestCommandCmdDoesNotRunOnUnrecognisedComments(t *testing.T) {
+	for _, body := range []string{
+		"@simplycubed-code please do not do this one",
+		"thanks @simplycubed-code go",
+		"@simplycubed-code",
+	} {
+		var out bytes.Buffer
+		// A repo-dir that has no config would make a real run fail loudly, so
+		// reaching one is detectable.
+		err := commandCmd([]string{"--body", body, "--repo-dir", t.TempDir(), "o/r#1"}, &out)
+		if err != nil {
+			t.Fatalf("%q should be a quiet no-op, got: %v", body, err)
+		}
+		if !strings.Contains(out.String(), "nothing to do") {
+			t.Fatalf("%q should report nothing to do, got: %q", body, out.String())
+		}
+	}
+}
+
+// The routing branches are the point of the subcommand: a recognised verb has
+// to reach the matching loop, carrying the flags with it. Each case uses a
+// directory with no config, so reaching the loop fails at config load - which
+// is how we know it was reached at all.
+func TestCommandCmdRoutesRecognisedVerbsToTheirLoops(t *testing.T) {
+	t.Setenv("AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
+	t.Setenv("AZURE_OPENAI_API_KEY", "k")
+
+	for name, body := range map[string]string{
+		"go routes to run":          "@simplycubed-code go",
+		"address routes to address": "@simplycubed-code address",
+	} {
+		var out bytes.Buffer
+		err := commandCmd([]string{"--body", body, "--repo-dir", t.TempDir(), "o/r#1"}, &out)
+		if err == nil {
+			t.Fatalf("%s: expected the loop to be reached and fail on the missing config", name)
+		}
+		if !strings.Contains(err.Error(), "load config") {
+			t.Fatalf("%s: err = %v, want a config error proving the loop was reached", name, err)
+		}
+		if strings.Contains(out.String(), "nothing to do") {
+			t.Fatalf("%s: a recognised verb must not be treated as a no-op", name)
+		}
+	}
+}
+
+func TestCommandCmdRejectsABodyFlagWithNoValue(t *testing.T) {
+	if err := commandCmd([]string{"--body"}, io.Discard); err == nil {
+		t.Fatal("expected an error for --body with no value")
+	}
+}
+
+// Engine selection is a documented config key and had no test. The default
+// matters most: an existing repository must keep the engine it already had.
+func TestNewRunnerSelectsTheEngine(t *testing.T) {
+	if _, ok := newRunner(&config.Config{}, t.TempDir()).(*codex.Runner); !ok {
+		t.Fatal("the default engine must be codex")
+	}
+	if _, ok := newRunner(&config.Config{Engine: "claude"}, t.TempDir()).(*claude.Runner); !ok {
+		t.Fatal("engine: claude must select the Claude adapter")
+	}
+	// An unrecognised engine falls back rather than failing later with an
+	// error that says nothing about the cause.
+	if _, ok := newRunner(&config.Config{Engine: "nope"}, t.TempDir()).(*codex.Runner); !ok {
+		t.Fatal("an unknown engine must fall back to the default")
+	}
+}
+
+// The sandbox knob exists so an adopter with externally sandboxed runners can
+// widen it themselves. Nothing in this repository sets it, so the test asserts
+// both that the default is untouched and that an explicit value is honoured.
+func TestNewRunnerHonoursTheSandboxOverride(t *testing.T) {
+	r, ok := newRunner(&config.Config{}, t.TempDir()).(*codex.Runner)
+	if !ok {
+		t.Fatal("expected the codex runner")
+	}
+	if r.Sandbox != "workspace-write" {
+		t.Fatalf("the sandbox must stay on by default, got %q", r.Sandbox)
+	}
+	t.Setenv("SIMPLYCUBED_SANDBOX", "read-only")
+	r2, _ := newRunner(&config.Config{}, t.TempDir()).(*codex.Runner)
+	if r2.Sandbox != "read-only" {
+		t.Fatalf("an explicit sandbox mode must be honoured, got %q", r2.Sandbox)
+	}
+}
+
+// A local run has no bot identity to attribute commits to, and must not invent
+// one; an Actions run does, and a runner has no git identity without it.
+func TestNewVCSAttributesCommitsToTheCredential(t *testing.T) {
+	if v := newVCS(""); v.AuthorName != "" || v.AuthorEmail != "" {
+		t.Fatalf("a run with no known identity must not invent one: %+v", v)
+	}
+	v := newVCS("simplycubed-code[bot]")
+	if v.AuthorName != "simplycubed-code[bot]" {
+		t.Fatalf("AuthorName = %q", v.AuthorName)
+	}
+	if !strings.HasSuffix(v.AuthorEmail, "@users.noreply.github.com") || strings.Contains(v.AuthorEmail, "[bot]") {
+		t.Fatalf("AuthorEmail = %q, want a noreply address with the bot suffix stripped", v.AuthorEmail)
+	}
+}
+
+func TestIsReleaseVersion(t *testing.T) {
+	for in, want := range map[string]bool{
+		"0.1.6": true, "10.20.30": true,
+		"0.1": false, "0.1.6-rc1": false, "": false, "a.b.c": false, "0..6": false,
+	} {
+		if got := isReleaseVersion(in); got != want {
+			t.Fatalf("isReleaseVersion(%q) = %v, want %v", in, got, want)
+		}
 	}
 }
