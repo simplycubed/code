@@ -3,6 +3,23 @@
 All notable changes are recorded here and summarized again in the matching
 GitHub release notes for each tag.
 
+## v0.1.7
+
+- Fixed comment commands. The reusable workflow declared `comment-body` and never
+  read it, so nothing called the parser: any comment beginning with the mention,
+  from anyone with write access, started a full run. `@simplycubed-code help`
+  started work instead of printing help, and a comment asking it not to proceed
+  started the work anyway.
+- Documentation caught up with the code. The README claimed the reviewer was not
+  wired in and that the Claude adapter was planned, both shipped; `STATUS.md`
+  named the wrong release and listed SHA-pinned actions as not done after they
+  shipped. `preflight`, `--dry-run`, and the install self-test had no
+  adopter-facing documentation at all and now do.
+- New `docs/troubleshooting.md`, starting from the symptom every install-time
+  failure shares: the run went green and nothing happened.
+- Three diagrams: the credential split between the local CLI and Actions, the
+  diagnosis tree for a silent success, and what triggers a run.
+
 ## v0.1.6
 
 - **The Actions runtime works end to end.** Two environment blockers are fixed:
