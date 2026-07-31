@@ -102,3 +102,9 @@ func (f *Forge) Report() string {
 	}
 	return b.String()
 }
+
+// IsPullRequest passes through. It is a read, and a dry run that cannot tell an
+// issue from a pull request would take a different branch than the real thing.
+func (f *Forge) IsPullRequest(ctx context.Context, repo string, number int) (bool, error) {
+	return f.Inner.IsPullRequest(ctx, repo, number)
+}

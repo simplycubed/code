@@ -38,4 +38,8 @@ type Forge interface {
 	// Whoami returns the login the current credential acts as. The loop uses it
 	// to recognise its own output, so it never addresses its own review.
 	Whoami(ctx context.Context) (string, error)
+	// IsPullRequest reports whether a number is a pull request rather than a
+	// plain issue. GitHub numbers both from one sequence, so a comment command
+	// cannot tell from the number alone which verb applies to it.
+	IsPullRequest(ctx context.Context, repo string, number int) (bool, error)
 }

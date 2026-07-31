@@ -71,3 +71,23 @@ func TestReportSaysSoWhenNothingHappened(t *testing.T) {
 		t.Fatalf("report should state that nothing happened: %s", got)
 	}
 }
+
+// IsPullRequest is a read, so a dry run must see the same answer the real run
+// would. Getting this wrong would send a dry run down a different branch than
+// the thing it is meant to preview.
+func TestIsPullRequestPassesThrough(t *testing.T) {
+	inner := &forgefake.Forge{PullRequests: map[int]bool{7: true}}
+	d := New(inner)
+	for number, want := range map[int]bool{7: true, 8: false} {
+		got, err := d.IsPullRequest(context.Background(), "o/r", number)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got != want {
+			t.Fatalf("IsPullRequest(%d) = %v, want %v", number, got, want)
+		}
+	}
+	if len(d.Actions()) != 0 {
+		t.Fatalf("a read must not be recorded as a write, recorded: %v", d.Actions())
+	}
+}
