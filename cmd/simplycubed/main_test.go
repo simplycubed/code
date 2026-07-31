@@ -8,6 +8,7 @@ import (
 	"github.com/simplycubed/code/internal/domain"
 	"github.com/simplycubed/code/internal/engine/claude"
 	"github.com/simplycubed/code/internal/engine/codex"
+	forge2 "github.com/simplycubed/code/internal/forge"
 	"github.com/simplycubed/code/internal/forge/dryrun"
 	forgefake "github.com/simplycubed/code/internal/forge/fake"
 	vcsgit "github.com/simplycubed/code/internal/vcs/git"
@@ -664,7 +665,13 @@ func TestPrepare(t *testing.T) {
 
 func TestCommandCmdRoutesByCommentBody(t *testing.T) {
 	t.Run("help replies without touching the repo", func(t *testing.T) {
+		f := stubCommentForge(t, nil)
 		var out bytes.Buffer
+		defer func() {
+			if len(f.Comments) != 1 || !strings.Contains(f.Comments[0], "@simplycubed-code go") {
+				t.Fatalf("help must be answered on the thread, posted: %v", f.Comments)
+			}
+		}()
 		if err := commandCmd([]string{"--body", "@simplycubed-code help", "o/r#1"}, &out); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -811,23 +818,107 @@ func TestTakeBody(t *testing.T) {
 // The parser exists so that a comment the agent does not understand does
 // nothing. Before this was wired, any comment beginning with the mention
 // started a full run, including one asking it not to.
+// stubCommentForge makes the reply path answer a fake instead of GitHub, and
+// returns it so a test can read what was posted.
+func stubCommentForge(t *testing.T, prs map[int]bool) *forgefake.Forge {
+	t.Helper()
+	f := &forgefake.Forge{PullRequests: prs}
+	prev := newCommentForge
+	newCommentForge = func() forge2.Forge { return f }
+	t.Cleanup(func() { newCommentForge = prev })
+	return f
+}
+
 func TestCommandCmdDoesNotRunOnUnrecognisedComments(t *testing.T) {
-	for _, body := range []string{
-		"@simplycubed-code please do not do this one",
-		"thanks @simplycubed-code go",
-		"@simplycubed-code",
-	} {
+	// Addressed to the agent, but carrying no verb it knows. It must not run,
+	// and it must not leave the person guessing either: the reply names the
+	// vocabulary. "please do not do this one" is the case that matters most,
+	// because it once started the work it was asking not to do.
+	t.Run("addressed but unrecognised gets an answer", func(t *testing.T) {
+		for _, body := range []string{
+			"@simplycubed-code please do not do this one",
+			"@simplycubed-code",
+		} {
+			f := stubCommentForge(t, nil)
+			var out bytes.Buffer
+			err := commandCmd([]string{"--body", body, "--repo-dir", t.TempDir(), "o/r#1"}, &out)
+			if err != nil {
+				t.Fatalf("%q should not be an error, got: %v", body, err)
+			}
+			if len(f.Comments) != 1 {
+				t.Fatalf("%q should be answered on the thread, posted: %v", body, f.Comments)
+			}
+			if !strings.Contains(f.Comments[0], "@simplycubed-code go") {
+				t.Fatalf("%q: the answer should name the vocabulary, got: %q", body, f.Comments[0])
+			}
+		}
+	})
+
+	// Not addressed to the agent at all. Answering this would make it the
+	// noisiest participant in every thread it is ever mentioned in.
+	t.Run("a passing mention stays silent", func(t *testing.T) {
+		f := stubCommentForge(t, nil)
 		var out bytes.Buffer
-		// A repo-dir that has no config would make a real run fail loudly, so
-		// reaching one is detectable.
-		err := commandCmd([]string{"--body", body, "--repo-dir", t.TempDir(), "o/r#1"}, &out)
+		err := commandCmd([]string{"--body", "thanks @simplycubed-code go", "--repo-dir", t.TempDir(), "o/r#1"}, &out)
 		if err != nil {
-			t.Fatalf("%q should be a quiet no-op, got: %v", body, err)
+			t.Fatalf("should be a quiet no-op, got: %v", err)
+		}
+		if len(f.Comments) != 0 || len(f.PRComments) != 0 {
+			t.Fatalf("a passing mention must post nothing, posted: %v %v", f.Comments, f.PRComments)
 		}
 		if !strings.Contains(out.String(), "nothing to do") {
-			t.Fatalf("%q should report nothing to do, got: %q", body, out.String())
+			t.Fatalf("output = %q", out.String())
 		}
-	}
+	})
+}
+
+// The verb has to match the surface it was aimed at. GitHub numbers issues and
+// pull requests from one sequence, so nothing in the ref says which it is, and
+// before this check `address` on an issue failed with a raw GraphQL error that
+// nobody saw.
+func TestCommandCmdAnswersAVerbAimedAtTheWrongSurface(t *testing.T) {
+	t.Run("address on an issue names go", func(t *testing.T) {
+		f := stubCommentForge(t, nil) // #1 is an issue
+		var out bytes.Buffer
+		if err := commandCmd([]string{"--body", "@simplycubed-code address this issue.", "--repo-dir", t.TempDir(), "o/r#1"}, &out); err != nil {
+			t.Fatalf("a wrong verb must not fail the run: %v", err)
+		}
+		if len(f.Comments) != 1 {
+			t.Fatalf("should have answered on the issue, posted: %v", f.Comments)
+		}
+		if !strings.Contains(f.Comments[0], "@simplycubed-code go") {
+			t.Fatalf("the answer must name the verb that applies, got: %q", f.Comments[0])
+		}
+	})
+
+	t.Run("go on a pull request names address", func(t *testing.T) {
+		f := stubCommentForge(t, map[int]bool{7: true})
+		var out bytes.Buffer
+		if err := commandCmd([]string{"--body", "@simplycubed-code go", "--repo-dir", t.TempDir(), "o/r#7"}, &out); err != nil {
+			t.Fatalf("a wrong verb must not fail the run: %v", err)
+		}
+		if len(f.PRComments) != 1 {
+			t.Fatalf("should have answered on the pull request, posted: %v", f.PRComments)
+		}
+		if !strings.Contains(f.PRComments[0], "@simplycubed-code address") {
+			t.Fatalf("the answer must name the verb that applies, got: %q", f.PRComments[0])
+		}
+	})
+
+	// A dry run exercises the path and posts nothing, like every other write.
+	t.Run("a dry run records the answer instead of posting it", func(t *testing.T) {
+		f := stubCommentForge(t, nil)
+		var out bytes.Buffer
+		if err := commandCmd([]string{"--body", "@simplycubed-code address", "--dry-run", "--repo-dir", t.TempDir(), "o/r#1"}, &out); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(f.Comments) != 0 {
+			t.Fatalf("a dry run must post nothing, posted: %v", f.Comments)
+		}
+		if !strings.Contains(out.String(), "comment") {
+			t.Fatalf("the dry-run report should name the skipped comment, got: %q", out.String())
+		}
+	})
 }
 
 // The routing branches are the point of the subcommand: a recognised verb has
@@ -842,8 +933,15 @@ func TestCommandCmdRoutesRecognisedVerbsToTheirLoops(t *testing.T) {
 		"go routes to run":          "@simplycubed-code go",
 		"address routes to address": "@simplycubed-code address",
 	} {
+		// #1 is an issue and #7 a pull request, so each verb is aimed at the
+		// surface it applies to and reaches its loop rather than being answered.
+		ref := "o/r#1"
+		if strings.Contains(body, "address") {
+			ref = "o/r#7"
+		}
+		stubCommentForge(t, map[int]bool{7: true})
 		var out bytes.Buffer
-		err := commandCmd([]string{"--body", body, "--repo-dir", t.TempDir(), "o/r#1"}, &out)
+		err := commandCmd([]string{"--body", body, "--repo-dir", t.TempDir(), ref}, &out)
 		if err == nil {
 			t.Fatalf("%s: expected the loop to be reached and fail on the missing config", name)
 		}

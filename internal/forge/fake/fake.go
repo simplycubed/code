@@ -35,6 +35,11 @@ type Forge struct {
 	// empty feedback (nothing to address).
 	Feedbacks []domain.ReviewFeedback
 	fbCalls   int
+	// PullRequests are the numbers IsPullRequest answers true for. Everything
+	// else is an issue, which is the common case in these tests.
+	PullRequests map[int]bool
+	// IsPRErr, when set, makes IsPullRequest fail.
+	IsPRErr error
 }
 
 // OpenPR records a pull request and returns a URL.
@@ -108,6 +113,16 @@ func (f *Forge) Whoami(_ context.Context) (string, error) {
 		return "", f.WhoamiErr
 	}
 	return f.Login, nil
+}
+
+// IsPullRequest reports whether a number was registered as a pull request.
+func (f *Forge) IsPullRequest(_ context.Context, _ string, number int) (bool, error) {
+	if f.IsPRErr != nil {
+		return false, f.IsPRErr
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.PullRequests[number], nil
 }
 
 // SawState reports whether a label was ever set.

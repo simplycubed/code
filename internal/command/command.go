@@ -67,6 +67,59 @@ func isSeparator(c byte) bool {
 	return false
 }
 
+// Addressed reports whether a comment was aimed at the agent at all, which is
+// the same test Parse applies before looking for a verb.
+//
+// The distinction matters for the reply: a comment that opens with the mention
+// and then says something unrecognised deserves an answer, and a comment that
+// merely mentions the agent in passing deserves silence.
+func Addressed(body string) bool {
+	rest, ok := strings.CutPrefix(strings.TrimSpace(body), Mention)
+	if !ok {
+		return false
+	}
+	return rest == "" || isSeparator(rest[0])
+}
+
+// Misdirected reports whether a verb was addressed to the wrong surface. The
+// vocabulary is small enough that this is a lookup rather than a rule: go opens
+// a pull request from an issue, address fixes an existing one.
+//
+// GitHub numbers issues and pull requests from a single sequence, so the number
+// in a comment ref never says which of the two it is. Without this check the
+// verb runs anyway and fails somewhere below with whatever the GitHub API says,
+// which is how `address` on an issue produced a raw GraphQL error.
+func Misdirected(k Kind, onPullRequest bool) bool {
+	switch k {
+	case Go:
+		return onPullRequest
+	case Address:
+		return !onPullRequest
+	default:
+		return false
+	}
+}
+
+// MisdirectedText explains the mismatch and names the verb that does apply.
+// Being told the right word is the whole point; "that is not valid here" would
+// leave the reader exactly where they started.
+func MisdirectedText(k Kind, onPullRequest bool) string {
+	if k == Go && onPullRequest {
+		return "`go` starts work on an issue and opens a pull request, and this is already a pull request.\n\n" +
+			"To have the current review feedback addressed on this branch, comment `@simplycubed-code address`."
+	}
+	if k == Address && !onPullRequest {
+		return "`address` reads the human review feedback on a pull request, and this is an issue, so there is no review to read.\n\n" +
+			"To start work on it, comment `@simplycubed-code go` or apply the `sc:go` label."
+	}
+	return ""
+}
+
+// UnknownText answers a comment addressed to the agent that carries no verb it
+// knows. It names the vocabulary, because the alternative is silence and a
+// person guessing a second time.
+const UnknownText = "I did not recognise a command in that comment.\n\n" + HelpText
+
 // HelpText lists what the agent understands, for a reply to Help.
 const HelpText = "I understand these, addressed to me at the start of a comment:\n\n" +
 	"- `@simplycubed-code go` on an issue: start work on it, the same as applying the go label.\n" +

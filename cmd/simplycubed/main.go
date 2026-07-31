@@ -239,18 +239,131 @@ func commandCmd(argv []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	switch command.Parse(body) {
+	kind := command.Parse(body)
+
+	switch kind {
 	case command.Help:
-		fmt.Fprintln(stdout, command.HelpText)
-		return nil
-	case command.Go:
-		return runCmd(rest)
-	case command.Address:
+		return reply(rest, command.HelpText, stdout)
+	case command.Go, command.Address:
+		// A verb aimed at the wrong surface is answered, not run. This lives on
+		// the comment path rather than inside run and address because someone
+		// typing `simplycubed address owner/repo#96` at a shell wants an error,
+		// not a comment posted in their name.
+		a, err := newAnswerer(rest)
+		if err != nil {
+			return err
+		}
+		if a.ok && command.Misdirected(kind, a.onPR) {
+			return a.post(command.MisdirectedText(kind, a.onPR), stdout)
+		}
+		if kind == command.Go {
+			return runCmd(rest)
+		}
 		return addressCmd(rest)
 	default:
+		// Only answer a comment that was actually addressed to the agent.
+		// Anything else is someone mentioning it in passing, and replying to
+		// that would make it the noisiest participant in every thread.
+		if command.Addressed(body) {
+			return reply(rest, command.UnknownText, stdout)
+		}
 		fmt.Fprintln(stdout, "no command recognised in that comment; nothing to do")
 		return nil
 	}
+}
+
+// newCommentForge builds the forge used to answer a comment. It is a variable so
+// the routing tests can answer without a network.
+var newCommentForge = func() forge2.Forge { return &forgegh.Forge{} }
+
+// answerer is the little that is needed to reply to a comment: which thread it
+// arrived on, and something to answer with.
+//
+// It deliberately does not go through prepare. Answering `help`, or telling
+// someone they used the wrong verb, must work in a repository that has no config
+// and no engine credentials, because those are exactly the repositories where
+// someone is most likely to be asking.
+type answerer struct {
+	forge forge2.Forge
+	dry   *dryrun.Forge
+	ref   domain.Issue
+	onPR  bool
+	// ok is false when the arguments carry no issue ref, which is what a local
+	// run driven by hand looks like. There is then nothing to answer on.
+	ok bool
+}
+
+func newAnswerer(argv []string) (answerer, error) {
+	var a answerer
+	// The ref is found by shape rather than by position, because the flags it
+	// sits among belong to run and address and are not parsed here.
+	for _, arg := range argv {
+		if ref, err := app.ParseIssueRef(arg); err == nil {
+			a.ref, a.ok = ref, true
+			break
+		}
+	}
+	if !a.ok {
+		return a, nil
+	}
+	gf := newCommentForge()
+	a.forge = gf
+	if dryRunRequested(argv) {
+		a.dry = dryrun.New(gf)
+		a.forge = a.dry
+	}
+	onPR, err := a.forge.IsPullRequest(context.Background(), a.ref.Repo, a.ref.Number)
+	if err != nil {
+		return a, fmt.Errorf("resolve %s#%d: %w", a.ref.Repo, a.ref.Number, err)
+	}
+	a.onPR = onPR
+	return a, nil
+}
+
+// post answers on the thread and echoes the same text, so a run driven from a
+// terminal still shows it where the operator is looking. Under a dry run the
+// post is recorded rather than made, like every other GitHub write.
+func (a answerer) post(body string, stdout io.Writer) error {
+	fmt.Fprintln(stdout, body)
+	if !a.ok {
+		return nil
+	}
+	defer func() {
+		if a.dry == nil {
+			return
+		}
+		fmt.Fprintln(stdout)
+		fmt.Fprintln(stdout, a.dry.Report())
+	}()
+	ctx := context.Background()
+	if a.onPR {
+		return a.forge.CommentPR(ctx, a.ref.Repo, a.ref.Number, body)
+	}
+	return a.forge.Comment(ctx, a.ref.Repo, a.ref.Number, body)
+}
+
+// dryRunRequested reads the flag without owning it. run and address define the
+// real flag set; this only needs to know whether to record instead of post.
+func dryRunRequested(argv []string) bool {
+	if os.Getenv("SIMPLYCUBED_DRY_RUN") != "" {
+		return true
+	}
+	for _, arg := range argv {
+		switch arg {
+		case "--dry-run", "-dry-run", "--dry-run=true", "-dry-run=true":
+			return true
+		}
+	}
+	return false
+}
+
+// reply answers on whatever thread the arguments point at.
+func reply(argv []string, body string, stdout io.Writer) error {
+	a, err := newAnswerer(argv)
+	if err != nil {
+		return err
+	}
+	return a.post(body, stdout)
 }
 
 // preflightCmd validates the repo config and engine settings, then exits. A

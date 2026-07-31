@@ -180,6 +180,25 @@ func (f *Forge) SetState(ctx context.Context, repo string, issue int, label stri
 }
 
 // Comment posts a comment on the issue.
+// IsPullRequest asks the issues endpoint, which answers for both surfaces and
+// carries a pull_request object only when the number is a pull request. That is
+// one call and it is how GitHub itself draws the line.
+func (f *Forge) IsPullRequest(ctx context.Context, repo string, number int) (bool, error) {
+	out, err := f.runJSON(ctx, "api", fmt.Sprintf("repos/%s/issues/%d", repo, number))
+	if err != nil {
+		return false, err
+	}
+	var probe struct {
+		PullRequest *struct {
+			URL string `json:"url"`
+		} `json:"pull_request"`
+	}
+	if err := json.Unmarshal(out, &probe); err != nil {
+		return false, fmt.Errorf("gh api issue: parse: %w", err)
+	}
+	return probe.PullRequest != nil, nil
+}
+
 func (f *Forge) Comment(ctx context.Context, repo string, issue int, body string) error {
 	_, err := f.run(ctx, "issue", "comment", strconv.Itoa(issue), "--repo", repo, "--body", body)
 	return err
