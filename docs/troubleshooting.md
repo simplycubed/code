@@ -92,7 +92,8 @@ Pull requests opened with a `GITHUB_TOKEN` do not trigger other workflows. If
 your required checks never appear on the agent's pull requests, the run is
 authenticating with the default token rather than the App.
 
-Check that `SIMPLYCUBED_GH_APP_ID` and `SIMPLYCUBED_GH_APP_PRIVATE_KEY` are set.
+Check that `SIMPLYCUBED_GH_APP_CLIENT_ID` and `SIMPLYCUBED_GH_APP_PRIVATE_KEY`
+are set.
 The self-test's first step fails when they are missing or wrong.
 
 ## The run was refused before it started

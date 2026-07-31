@@ -3,6 +3,25 @@
 All notable changes are recorded here and summarized again in the matching
 GitHub release notes for each tag.
 
+## v0.1.8
+
+- **The Actions runtime was dead in `v0.1.7` and is fixed here.** The comment
+  dispatch fix gave the run step a second `env:` block instead of adding to the
+  first. YAML keeps the last of two identical keys, so `GH_TOKEN` and both Azure
+  variables were dropped, and GitHub, which is stricter than the parser the gate
+  used, refused to load the file at all. Every run since that merge failed in
+  about a second without starting a job. Upgrade from `v0.1.7`.
+- The gate now rejects a duplicate YAML key anywhere in a workflow, template, or
+  the embedded caller. `yaml.safe_load` accepted the broken file and kept the
+  last key, which is exactly why the break reached a release: green gate, dead
+  workflow. This is the second time a workflow defect passed a gate that only
+  compiled Go, and the check is written to fail on the real file from `v0.1.7`.
+- The App token step now uses `client-id`, which ends the deprecation warning
+  on every run. The two inputs are not interchangeable in principle, but the
+  action resolves `client-id || app-id` into one value, so adopters passing
+  `github-app-id` keep working while the documented path moves to
+  `SIMPLYCUBED_GH_APP_CLIENT_ID`.
+
 ## v0.1.7
 
 - Fixed comment commands. The reusable workflow declared `comment-body` and never

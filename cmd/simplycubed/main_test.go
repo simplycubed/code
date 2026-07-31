@@ -128,7 +128,7 @@ exit 0
 		"disable the App webhook, set install visibility to Any account, and install it on the repo",
 		"write the real gate in .github/simplycubed.yml",
 		"verify that gate is green on your main branch",
-		"set the SIMPLYCUBED_GH_APP_ID repo variable",
+		"set the SIMPLYCUBED_GH_APP_CLIENT_ID repo variable to the App Client ID",
 		"add the SIMPLYCUBED_GH_APP_PRIVATE_KEY repo secret with the full PEM, including BEGIN/END lines",
 		"set the AZURE_OPENAI_ENDPOINT repo variable",
 		"add the AZURE_OPENAI_API_KEY repo secret",
@@ -242,7 +242,7 @@ exit 0
 	}
 	for _, want := range []string{
 		"uses: simplycubed/code/.github/workflows/simplycubed.yml@v0.1.0",
-		"github-app-id: ${{ vars.SIMPLYCUBED_GH_APP_ID }}",
+		"github-app-client-id: ${{ vars.SIMPLYCUBED_GH_APP_CLIENT_ID }}",
 		"azure-openai-api-key: ${{ secrets.AZURE_OPENAI_API_KEY }}",
 		"github-app-private-key: ${{ secrets.SIMPLYCUBED_GH_APP_PRIVATE_KEY }}",
 	} {

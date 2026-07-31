@@ -16,7 +16,7 @@ Prerequisites:
 1. Install the CLI:
 
 ```sh
-go install github.com/simplycubed/code/cmd/simplycubed@v0.1.7
+go install github.com/simplycubed/code/cmd/simplycubed@v0.1.8
 simplycubed version
 ```
 
@@ -56,7 +56,7 @@ simplycubed run owner/repo#N --repo-dir .
 
 4. In the GitHub repository settings, add:
 
-- Variable: `SIMPLYCUBED_GH_APP_ID`
+- Variable: `SIMPLYCUBED_GH_APP_CLIENT_ID`, the App Client ID, the `Iv23` string on the App settings page
 - Secret: `SIMPLYCUBED_GH_APP_PRIVATE_KEY`
 - Variable: `AZURE_OPENAI_ENDPOINT`
 - Secret: `AZURE_OPENAI_API_KEY`
@@ -119,7 +119,7 @@ flowchart TB
     end
 
     subgraph actions["GitHub Actions: the App is the identity"]
-        A1["repository variables<br/>AZURE_OPENAI_ENDPOINT<br/>SIMPLYCUBED_GH_APP_ID"]
+        A1["repository variables<br/>AZURE_OPENAI_ENDPOINT<br/>SIMPLYCUBED_GH_APP_CLIENT_ID"]
         A2["repository secrets<br/>AZURE_OPENAI_API_KEY<br/>SIMPLYCUBED_GH_APP_PRIVATE_KEY"]
         A3["per-job installation token<br/>contents, issues, pull requests"]
         A4["simplycubed run / address"]
@@ -191,7 +191,8 @@ passes:
   `azure-openai-endpoint`.
 - `secrets.AZURE_OPENAI_API_KEY` to the reusable workflow secret
   `azure-openai-api-key`.
-- `vars.SIMPLYCUBED_GH_APP_ID` to the reusable workflow input `github-app-id`.
+- `vars.SIMPLYCUBED_GH_APP_CLIENT_ID` to the reusable workflow input
+  `github-app-client-id`.
 - `secrets.SIMPLYCUBED_GH_APP_PRIVATE_KEY` to the reusable workflow secret
   `github-app-private-key`.
 
