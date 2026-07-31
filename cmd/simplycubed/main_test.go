@@ -415,7 +415,7 @@ func TestEngineEnvValidatesEndpointAndKey(t *testing.T) {
 	}
 	// A trailing slash is normalized away, because the engine appends a path.
 	set("https://r.openai.azure.com/", "k")
-	got, err := engineEnv()
+	got, err := engineEnv(&config.Config{})
 	if err != nil || got != "https://r.openai.azure.com" {
 		t.Fatalf("engineEnv() = %q, %v", got, err)
 	}
@@ -429,31 +429,39 @@ func TestEngineEnvValidatesEndpointAndKey(t *testing.T) {
 		"no host":          {"https://", "k"},
 	} {
 		set(c[0], c[1])
-		if _, err := engineEnv(); err == nil {
+		if _, err := engineEnv(&config.Config{}); err == nil {
 			t.Fatalf("%s: expected an error", name)
 		}
 	}
 }
 
-func TestPreflightCmd(t *testing.T) {
-	writeConfig := func(t *testing.T) string {
-		t.Helper()
-		dir := t.TempDir()
-		path := filepath.Join(dir, ".github", "simplycubed.yml")
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, []byte("gate: make check\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		return dir
+func TestEngineEnvSkipsAzureForClaude(t *testing.T) {
+	t.Setenv("AZURE_OPENAI_ENDPOINT", "")
+	t.Setenv("AZURE_OPENAI_API_KEY", "")
+	got, err := engineEnv(&config.Config{Engine: "claude"})
+	if err != nil || got != "" {
+		t.Fatalf("engineEnv(claude) = %q, %v", got, err)
 	}
+}
 
+func TestPreflightCmd(t *testing.T) {
 	t.Run("reports ok when config and engine settings are present", func(t *testing.T) {
 		t.Setenv("AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
 		t.Setenv("AZURE_OPENAI_API_KEY", "k")
 		var out bytes.Buffer
-		if err := preflightCmd([]string{"--repo-dir", writeConfig(t)}, &out); err != nil {
+		if err := preflightCmd([]string{"--repo-dir", repoWithConfigBody(t, "gate: make check\n")}, &out); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(out.String(), "preflight ok") {
+			t.Fatalf("output = %q", out.String())
+		}
+	})
+
+	t.Run("allows claude with no Azure settings", func(t *testing.T) {
+		t.Setenv("AZURE_OPENAI_ENDPOINT", "")
+		t.Setenv("AZURE_OPENAI_API_KEY", "")
+		var out bytes.Buffer
+		if err := preflightCmd([]string{"--repo-dir", repoWithConfigBody(t, "gate: make check\nengine: claude\n")}, &out); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if !strings.Contains(out.String(), "preflight ok") {
@@ -475,7 +483,7 @@ func TestPreflightCmd(t *testing.T) {
 	t.Run("names the missing endpoint", func(t *testing.T) {
 		t.Setenv("AZURE_OPENAI_ENDPOINT", "")
 		t.Setenv("AZURE_OPENAI_API_KEY", "k")
-		err := preflightCmd([]string{"--repo-dir", writeConfig(t)}, io.Discard)
+		err := preflightCmd([]string{"--repo-dir", repoWithConfigBody(t, "gate: make check\n")}, io.Discard)
 		if err == nil || !strings.Contains(err.Error(), "AZURE_OPENAI_ENDPOINT") {
 			t.Fatalf("err = %v, want the endpoint named", err)
 		}
@@ -493,7 +501,7 @@ func TestEngineEnvRejectsAnUnparseableEndpoint(t *testing.T) {
 	// branch from the scheme and host checks.
 	t.Setenv("AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com/\x7f")
 	t.Setenv("AZURE_OPENAI_API_KEY", "k")
-	if _, err := engineEnv(); err == nil {
+	if _, err := engineEnv(&config.Config{}); err == nil {
 		t.Fatal("expected an error for an unparseable endpoint")
 	}
 }
@@ -574,12 +582,17 @@ func TestDispatch(t *testing.T) {
 
 func repoWithConfig(t *testing.T) string {
 	t.Helper()
+	return repoWithConfigBody(t, "gate: make check\nlabelPrefix: sc\n")
+}
+
+func repoWithConfigBody(t *testing.T, body string) string {
+	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".github", "simplycubed.yml")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte("gate: make check\nlabelPrefix: sc\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return dir
@@ -621,6 +634,22 @@ func TestPrepare(t *testing.T) {
 		_, _, err := prepare("run", []string{"--repo-dir", repoWithConfig(t)})
 		if err == nil || !strings.Contains(err.Error(), "AZURE_OPENAI_API_KEY") {
 			t.Fatalf("err = %v, want the key named", err)
+		}
+	})
+
+	t.Run("allows claude with no Azure settings and skips codex config", func(t *testing.T) {
+		t.Setenv("AZURE_OPENAI_ENDPOINT", "")
+		t.Setenv("AZURE_OPENAI_API_KEY", "")
+		stateDir := t.TempDir()
+		c, _, err := prepare("run", []string{"--repo-dir", repoWithConfigBody(t, "gate: make check\nengine: claude\n"), "--state-dir", stateDir})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if _, ok := c.deps.Runner.(*claude.Runner); !ok {
+			t.Fatalf("expected the Claude runner, got %#v", c.deps.Runner)
+		}
+		if _, err := os.Stat(filepath.Join(stateDir, "codex-home", "config.toml")); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("claude runs must not render a codex config, stat err = %v", err)
 		}
 	})
 

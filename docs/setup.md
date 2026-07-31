@@ -182,6 +182,19 @@ export AZURE_OPENAI_API_KEY="<key>"
 simplycubed run owner/repo#123 --repo-dir .
 ```
 
+To use Claude Code locally instead, set `engine: claude` in
+`.github/simplycubed.yml`. That local path uses your existing `claude` CLI
+authentication and does not need Azure variables:
+
+```yaml
+gate: make check
+engine: claude
+```
+
+```sh
+simplycubed run owner/repo#123 --repo-dir .
+```
+
 ### GitHub Actions
 
 For the hosted-in-your-GitHub path, the caller workflow in your repository
@@ -198,6 +211,10 @@ passes:
 
 The reusable workflow installs the CLI, exports the endpoint and key for the job,
 and runs `simplycubed run` or `simplycubed address`.
+
+That hosted path is still Codex-on-Azure only. The reusable workflow installs
+the Codex CLI, not the Claude CLI, and its inputs and secrets still require the
+Azure endpoint and API key.
 
 ## Watching it run before it writes
 

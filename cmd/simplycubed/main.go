@@ -142,11 +142,14 @@ var callerWorkflowTemplate string
 //go:embed simplycubed-selftest.yml.tmpl
 var selftestWorkflowTemplate string
 
-// engineEnv validates the engine settings and returns the normalized endpoint.
-// It is the single implementation: `prepare` calls it before a run, and the
-// `preflight` command calls it so a workflow can fail early without a second
-// copy of these rules written in shell.
-func engineEnv() (string, error) {
+// engineEnv validates the selected engine settings and returns the normalized
+// Azure endpoint when the engine needs one. It is the single implementation:
+// `prepare` calls it before a run, and `preflight` calls it so a workflow can
+// fail early without a second copy of these rules written in shell.
+func engineEnv(cfg *config.Config) (string, error) {
+	if cfg != nil && cfg.Engine == "claude" {
+		return "", nil
+	}
 	endpoint := strings.TrimRight(os.Getenv("AZURE_OPENAI_ENDPOINT"), "/")
 	if endpoint == "" {
 		return "", fmt.Errorf("AZURE_OPENAI_ENDPOINT is not set. It is a repository variable on your own repository; a reusable workflow never inherits variables from SimplyCubed")
@@ -377,10 +380,11 @@ func preflightCmd(argv []string, stdout io.Writer) error {
 	if _, err := parseInterleaved(fs, argv); err != nil {
 		return err
 	}
-	if _, err := config.Load(filepath.Join(*repoDir, ".github", "simplycubed.yml")); err != nil {
+	cfg, err := config.Load(filepath.Join(*repoDir, ".github", "simplycubed.yml"))
+	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
-	if _, err := engineEnv(); err != nil {
+	if _, err := engineEnv(cfg); err != nil {
 		return err
 	}
 	fmt.Fprintln(stdout, "preflight ok: config and engine settings are present")
@@ -441,18 +445,20 @@ func prepare(name string, argv []string) (*commonFlags, []string, error) {
 		return nil, nil, fmt.Errorf("load config: %w", err)
 	}
 
-	endpoint, err := engineEnv()
+	endpoint, err := engineEnv(cfg)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	codexHome := filepath.Join(*stateDir, "codex-home")
-	if _, err := codex.WriteConfig(codexHome, codex.ProviderConfig{
-		Model:   *model,
-		BaseURL: endpoint + "/openai/v1",
-		EnvKey:  "AZURE_OPENAI_API_KEY",
-	}); err != nil {
-		return nil, nil, fmt.Errorf("write codex config: %w", err)
+	if cfg.Engine != "claude" {
+		if _, err := codex.WriteConfig(codexHome, codex.ProviderConfig{
+			Model:   *model,
+			BaseURL: endpoint + "/openai/v1",
+			EnvKey:  "AZURE_OPENAI_API_KEY",
+		}); err != nil {
+			return nil, nil, fmt.Errorf("write codex config: %w", err)
+		}
 	}
 
 	prefix := cfg.LabelPrefix

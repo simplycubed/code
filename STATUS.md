@@ -79,11 +79,11 @@ via `.github/workflows/check.yml`; the required status check on `main` is the
 
 ## What is next
 
-- **Engine roadmap:** Codex on Azure is the engine you can actually run. The
-  Claude Code adapter is written and `engine: claude` selects it, but nothing
-  around it has caught up: the CLI demands Azure credentials whatever engine you
-  pick, and the reusable workflow installs only the Codex CLI, so the Actions
-  path cannot run it at all. See #95. Self-hosted
+- **Engine roadmap:** Codex on Azure is the engine the reusable GitHub Actions
+  workflow can actually run. The Claude Code adapter is written and
+  `engine: claude` now works from a local CLI run, but the reusable workflow
+  still installs only the Codex CLI and still requires Azure inputs and
+  secrets, so the Actions path cannot run Claude yet. See #95. Self-hosted
   models on Hugging Face are next. Each is another `Runner` implementation; no
   core rework.
 
