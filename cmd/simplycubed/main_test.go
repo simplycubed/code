@@ -5,6 +5,7 @@ import (
 	"context"
 	"flag"
 	"github.com/simplycubed/code/internal/config"
+	"github.com/simplycubed/code/internal/domain"
 	"github.com/simplycubed/code/internal/engine/claude"
 	"github.com/simplycubed/code/internal/engine/codex"
 	"github.com/simplycubed/code/internal/forge/dryrun"
@@ -917,6 +918,57 @@ func TestIsReleaseVersion(t *testing.T) {
 	} {
 		if got := isReleaseVersion(in); got != want {
 			t.Fatalf("isReleaseVersion(%q) = %v, want %v", in, got, want)
+		}
+	}
+}
+
+// The issue title and body become the prompt, so fetching them wrong is not a
+// cosmetic failure: the agent would work from the wrong instructions.
+func TestFetchIssue(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("gh stub is a POSIX shell script")
+	}
+	stubDir := t.TempDir()
+	stub := filepath.Join(stubDir, "gh")
+	body := `{"title":"Fix the parser","body":"It drops the last line."}`
+	if err := os.WriteFile(stub, []byte("#!/bin/sh\ncat <<'J'\n"+body+"\nJ\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", stubDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	iss := domain.Issue{Repo: "o/r", Number: 12}
+	if err := fetchIssue(&iss); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if iss.Title != "Fix the parser" || iss.Body != "It drops the last line." {
+		t.Fatalf("issue = %+v", iss)
+	}
+
+	// Malformed output must be an error, not a silently empty prompt.
+	if err := os.WriteFile(stub, []byte("#!/bin/sh\necho 'not json'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := fetchIssue(&domain.Issue{Repo: "o/r", Number: 1}); err == nil {
+		t.Fatal("malformed gh output must error")
+	}
+
+	// A gh failure must surface rather than leaving the issue blank.
+	if err := os.WriteFile(stub, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := fetchIssue(&domain.Issue{Repo: "o/r", Number: 1}); err == nil {
+		t.Fatal("a gh failure must error")
+	}
+}
+
+func TestRunAndAddressRequireARef(t *testing.T) {
+	t.Setenv("AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
+	t.Setenv("AZURE_OPENAI_API_KEY", "k")
+	repo := repoWithConfig(t)
+	for name, fn := range map[string]func([]string) error{"run": runCmd, "address": addressCmd} {
+		err := fn([]string{"--repo-dir", repo, "--state-dir", t.TempDir()})
+		if err == nil || !strings.Contains(err.Error(), "missing") {
+			t.Fatalf("%s with no ref: err = %v, want a missing-ref error", name, err)
 		}
 	}
 }
