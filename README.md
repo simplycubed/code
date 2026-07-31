@@ -198,7 +198,7 @@ Getting the gate right is where first runs stall: it has to be green on your own
 
 The model that writes the code sits behind a pluggable `Runner` interface, so you bring your own provider.
 
-Codex on Azure is the engine you can run today. `engine: claude` selects the Claude Code adapter, which runs headless (`claude -p`) against whatever credentials that CLI is already configured with, but it is not usable yet: the CLI still demands Azure credentials whatever engine you pick, and the reusable workflow installs only the Codex CLI, so a GitHub Actions run cannot use it at all. [#95](https://github.com/simplycubed/code/issues/95) tracks closing that. The loop, the roles, and the gate are identical either way; the engine is the only thing that changes.
+Codex on Azure is the engine the reusable GitHub Actions workflow can run today. `engine: claude` selects the Claude Code adapter, which runs headless (`claude -p`) against whatever credentials that CLI is already configured with. That path now works for local CLI runs and does not need Azure variables, but the reusable workflow still installs only the Codex CLI and still requires Azure inputs and secrets, so GitHub Actions cannot use Claude yet. The loop, the roles, and the gate are identical either way; the engine is the only thing that changes.
 
 ```yaml
 gate: make check
@@ -206,7 +206,7 @@ gate: make check
 engine: claude
 ```
 
-The first engine adapter targets the Codex CLI running against Azure OpenAI. Today the shipped setup needs an Azure endpoint, an API key, and optionally a deployment name override if you are not using the default `gpt-5.4`. The Claude Code adapter is written and tested behind `engine: claude`, and is not reachable through the documented install yet. The `Runner` interface is the seam where other engines plug in.
+The first engine adapter targets the Codex CLI running against Azure OpenAI. Today the shipped GitHub Actions setup needs an Azure endpoint, an API key, and optionally a deployment name override if you are not using the default `gpt-5.4`. The Claude Code adapter is written and tested behind `engine: claude`, and today is reachable from a local CLI run only. The `Runner` interface is the seam where other engines plug in.
 
 ## Status
 
