@@ -1,17 +1,26 @@
 # Setup
 
-This is the adopter path that exists today: install the CLI, write the repo
-config and caller workflow into your own repository, set the Azure values in the
-right places, and let GitHub Actions drive issues to pull requests.
+This guide shows how to install SimplyCubed Code in a repository you control so
+it can turn issues into pull requests inside your own GitHub environment.
 
-## Quickstart
+You will:
 
-Prerequisites:
+- install the `simplycubed` CLI
+- generate the repository config and GitHub workflow files
+- connect your GitHub App and model credentials
+- run a one-time self-test
+- hand the first issue to the agent
 
-- Go installed locally so you can run `go install`.
-- `gh` authenticated against the repository you want to onboard.
-- Write access on that repository.
-- An Azure OpenAI endpoint and API key.
+## Before you begin
+
+You need:
+
+- Go installed locally so you can run `go install`
+- `gh` authenticated against the repository you want to onboard
+- write access on that repository
+- an Azure OpenAI endpoint and API key
+
+## Install and configure
 
 1. Install the CLI:
 
@@ -20,33 +29,34 @@ go install github.com/simplycubed/code/cmd/simplycubed@v0.1.9
 simplycubed version
 ```
 
-2. In the target repository, generate the starter files and labels:
+2. In the target repository, generate the setup files and labels:
 
 ```sh
 simplycubed init --workflow
 ```
 
-That writes three files and creates the `sc:*` labels through your local `gh`
-auth:
+That creates the `sc:*` labels through your local `gh` session and writes three
+files into your repository:
 
 - `.github/simplycubed.yml`, the repository config
-- `.github/workflows/simplycubed.yml`, the caller workflow
-- `.github/workflows/simplycubed-selftest.yml`, an install check you run once
-  and then delete The files are local
-changes in your repository; nothing is merged or installed remotely for you.
+- `.github/workflows/simplycubed.yml`, the workflow that runs SimplyCubed Code
+- `.github/workflows/simplycubed-selftest.yml`, a one-time installation check
+
+These are local file changes in your repository. Nothing is merged or installed
+remotely for you.
 
 3. Edit `.github/simplycubed.yml` and set a real gate that is already green on
-your default branch. A minimal example is:
+your default branch. A minimal customer setup looks like this:
 
 ```yaml
 labelPrefix: sc
 gate: make check
 ```
 
-### Run it locally first
+### Optional: prove it locally first
 
-Before wiring Actions, you can prove the loop works from your terminal with the
-same config file:
+Before wiring GitHub Actions, you can prove the loop works from your terminal
+with the same config file:
 
 ```sh
 export AZURE_OPENAI_ENDPOINT="https://<resource>.openai.azure.com"
@@ -54,7 +64,14 @@ export AZURE_OPENAI_API_KEY="<key>"
 simplycubed run owner/repo#N --repo-dir .
 ```
 
-4. In the GitHub repository settings, add:
+4. Create and install the GitHub App identity, then add the required repository
+settings.
+
+Create the `simplycubed-code` GitHub App with `Contents`, `Issues`, and `Pull
+requests` permissions only, disable the webhook, set install visibility to `Any
+account`, and install it on the repository.
+
+Then add these repository settings:
 
 - Variable: `SIMPLYCUBED_GH_APP_CLIENT_ID`, the App Client ID, the `Iv23` string on the App settings page
 - Secret: `SIMPLYCUBED_GH_APP_PRIVATE_KEY`
@@ -62,14 +79,12 @@ simplycubed run owner/repo#N --repo-dir .
 - Secret: `AZURE_OPENAI_API_KEY`
 
 The Actions runtime authenticates as the `simplycubed-code` GitHub App, so the
-App ID and private key are required. Create the App with `Contents`, `Issues`,
-and `Pull requests` permissions only, webhook disabled, install visibility `Any
-account`, then install it on the repository. Store the private key as the full
-PEM contents, including the `-----BEGIN` and `-----END` lines.
+App ID and private key are required. Store the private key as the full PEM
+contents, including the `-----BEGIN` and `-----END` lines.
 
 Each job mints its own installation token for that repository, so the agent
-authors commits, pull requests, and comments as `simplycubed-code[bot]`, and its
-pull requests receive their own CI runs. A personal access token is not an
+authors commits, pull requests, and comments as `simplycubed-code[bot]`, and
+its pull requests receive their own CI runs. A personal access token is not an
 alternative: the reusable workflow accepts App credentials only.
 
 5. Commit the generated config and workflow files in the target repository, open
@@ -77,26 +92,37 @@ a setup pull request, and merge it yourself. Setup files are written locally by
 `simplycubed init` and merged by a human, because the runtime holds no
 `workflows` permission and cannot add its own workflow files.
 
-6. Check the install before trusting it:
+6. Run the installation self-test before you rely on the workflow:
 
 ```sh
 gh workflow run simplycubed-selftest
 ```
 
-That runs in your own runner and reports whether the App token resolves to a
-bot, whether it is correctly denied Actions administration, whether a commit is
-possible, and whether the engine can start there. Delete the workflow once it
-passes; normal operation goes through the App and the `sc:go` label.
+That runs in your own environment and reports whether the App token resolves to
+a bot, whether it is correctly denied Actions administration, whether a commit
+is possible, and whether the engine can start there. Delete the self-test
+workflow once it passes; normal operation goes through the App and the `sc:go`
+label.
 
 7. File an issue that describes a small change and apply the `sc:go` label.
 
 8. Wait for the workflow to open a pull request. Review it like any other PR:
 
-- Merge it yourself if it is good.
-- Or request changes; the fixer loop will address feedback on the current head
-  and push back to the same branch.
+- merge it yourself if it is good
+- or request changes; the fixer loop will address feedback on the current head
+  and push back to the same branch
 
-That is the first end-to-end path: issue -> PR -> human merge.
+That is the first end-to-end customer path: issue -> PR -> human merge.
+
+## Day-to-day use
+
+Once setup is complete, your team uses SimplyCubed Code through normal GitHub
+workflows:
+
+- apply `sc:go` to an issue to start implementation
+- review the pull request the agent opens
+- request changes if needed; the fixer loop pushes updates back to the same PR
+- merge it yourself when it meets your standards
 
 ## Where each value goes
 
@@ -170,9 +196,9 @@ Use the same endpoint and key in both places, but wire them differently.
 
 For local runs such as `simplycubed run owner/repo#123`, the CLI reads:
 
-- `AZURE_OPENAI_ENDPOINT` from your shell environment.
-- `AZURE_OPENAI_API_KEY` from your shell environment.
-- The repo gate and label prefix from `.github/simplycubed.yml`.
+- `AZURE_OPENAI_ENDPOINT` from your shell environment
+- `AZURE_OPENAI_API_KEY` from your shell environment
+- the repo gate and label prefix from `.github/simplycubed.yml`
 
 Example:
 
@@ -201,16 +227,16 @@ For the hosted-in-your-GitHub path, the caller workflow in your repository
 passes:
 
 - `vars.AZURE_OPENAI_ENDPOINT` to the reusable workflow input
-  `azure-openai-endpoint`.
+  `azure-openai-endpoint`
 - `secrets.AZURE_OPENAI_API_KEY` to the reusable workflow secret
-  `azure-openai-api-key`.
+  `azure-openai-api-key`
 - `vars.SIMPLYCUBED_GH_APP_CLIENT_ID` to the reusable workflow input
-  `github-app-client-id`.
+  `github-app-client-id`
 - `secrets.SIMPLYCUBED_GH_APP_PRIVATE_KEY` to the reusable workflow secret
-  `github-app-private-key`.
+  `github-app-private-key`
 
-The reusable workflow installs the CLI, exports the endpoint and key for the job,
-and runs `simplycubed run` or `simplycubed address`.
+The reusable workflow installs the CLI, exports the endpoint and key for the
+job, and runs `simplycubed run` or `simplycubed address`.
 
 That hosted path is still Codex-on-Azure only. The reusable workflow installs
 the Codex CLI, not the Claude CLI, and its inputs and secrets still require the
