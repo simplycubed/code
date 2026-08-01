@@ -2,7 +2,7 @@
 
 [![An agent that runs in your GitHub, not ours. Open source. Your runners, your secrets. A human merges.](docs/assets/simplycubed-code.png)](https://simplycubed.com/code?utm_source=github&utm_medium=readme&utm_campaign=code)
 
-An autonomous coding agent that lives inside your own GitHub. You file an issue, it opens a pull request, and a human decides whether to merge.
+SimplyCubed Code is an autonomous coding agent you install into your own GitHub. Your team files an issue, the agent prepares a pull request in your repository, and one of your reviewers decides whether it ships.
 
 > Beta, at `v0.1.9`. Product overview: [simplycubed.com/code](https://simplycubed.com/code?utm_source=github&utm_medium=readme&utm_campaign=code). See [Status](#status).
 
@@ -16,17 +16,29 @@ That runs the whole loop, including the model and your own gate. It makes no Git
 
 `simplycubed init --workflow` also writes a self-test into your repository. Dispatch it once and it checks, in your own runner, that the App token resolves to a bot, that it can read what it needs, and that it is denied Actions administration. The install fails if that denial does not hold. Delete the workflow once it passes.
 
-## What it is
+## Product overview
 
-SimplyCubed Code turns a GitHub issue into a pull request without a person writing the code. A human files an issue describing the change; the agent implements it against the repo's own quality gate and opens a pull request for a human to merge. When a human then requests changes on that pull request, a fixer role reads the feedback, addresses it, re-runs the gate, and pushes back to the same branch for another look.
+SimplyCubed Code turns a GitHub issue into a proposed code change inside your own environment. Your team keeps the repository, runners, secrets, and branch protection rules. The agent does the implementation work, but it never merges its own pull requests.
 
-It proposes. It does not dispose. The agent never pushes to `main` and never merges its own work. A person is always the one who clicks merge.
+For a customer team, the model is simple:
 
-The part that makes it different from hosted coding agents is where it runs. Everything happens inside your own GitHub Actions, on your runners, using your minutes and your secrets. SimplyCubed hosts nothing, runs no server on your behalf, and never sees your code or your credentials. Compare that to tools like Copilot's coding agent, Devin, or Codex cloud, which run the model against your code on someone else's infrastructure.
+- Your developers describe work in GitHub issues.
+- SimplyCubed Code implements against the repository's existing quality gate, such as `make check`.
+- The agent opens or updates a pull request for human review.
+- Your team keeps final control over merge, release, and production access.
+
+The product is designed for teams that want autonomous implementation without handing their source code or GitHub credentials to a hosted vendor runtime. Everything runs in your own GitHub Actions environment, on your runners, using your secrets.
+
+## Why teams use it
+
+- It runs inside your GitHub, not SimplyCubed's infrastructure.
+- It uses your repository's existing quality gate instead of inventing its own definition of done.
+- It is built for a human-review workflow, not auto-merge automation.
+- It keeps permissions narrow: the agent can propose changes, but not deploy or merge them.
 
 ## How it works
 
-The loop is issue to pull request, driven entirely through GitHub.
+The customer workflow is issue to pull request, driven entirely through GitHub.
 
 1. A human files an issue and applies the `sc:go` label. That label is the only thing a person applies to start the work.
 2. The agent implements the change on a branch and runs the repo's own quality gate, using the gate's output to guide each retry until it passes or it stops and asks for a human.
@@ -34,7 +46,7 @@ The loop is issue to pull request, driven entirely through GitHub.
 4. A human reviews. If they request changes, a fixer role reads the feedback, makes the changes, re-runs the gate, and pushes back to the same pull request for another look. Only feedback left against the current head is addressed, so the loop never re-litigates a comment it already handled.
 5. A human merges. The agent does not.
 
-An automated reviewer runs before step 4 if you turn it on (`review: true`, off by default). It comments; it never approves and never merges. Step 5 is a human either way.
+An automated reviewer can also run before human review if you turn on `review: true`. It comments on the change; it does not approve and it does not merge.
 
 ### Label lifecycle
 
@@ -78,11 +90,11 @@ flowchart LR
 
 A plain comment in the conversation box is not a review. To run the fixer from a review, submit it through **Files changed → Review changes**. Every path checks that the person has write access before anything else happens.
 
-## Running in your own GitHub
+## Deployment model
 
-The whole thing runs on GitHub Actions, event-driven, with no server and no VM for SimplyCubed to operate. When you install the app and file issues, the work executes on your runners inside your organization.
+SimplyCubed Code is deployed into your GitHub organization. There is no SimplyCubed-hosted control plane managing your repositories for you. When your team installs the GitHub App and adds the workflow, the work runs on your runners inside your account.
 
-### What it can do to your repo, and what stops it
+### What it can do, and what stops it
 
 It can open a pull request against a branch. That is the strongest action available to it.
 
@@ -95,20 +107,20 @@ What stops it, roughly in order of how much you should trust each one:
 5. Neither engine's "dangerous" bypass flag is set. When a change cannot be made under those constraints, the run stops and a human finishes it. [Why](docs/faq.md).
 6. No deploy credentials, and no path to production. Your branch protection rules decide what happens once the pull request exists.
 
-What this buys you:
+What that means for customers:
 
 - Your code stays in your repos. SimplyCubed never receives it.
 - Your model provider keys, the GitHub App's private key, and any other secrets stay in your GitHub secret store. They are read by your own Actions runs and never transit our infrastructure.
 - It does not use the engines' "dangerous" bypass flags, and does not receive a GitHub token in the model's shell. When a change cannot be made under those constraints, the run stops and a human finishes it. See the [FAQ](docs/faq.md).
 - The agent holds no deploy credentials and has no path to production. The most it can do is open a pull request against a branch. A human and your branch protection rules decide what happens next.
 
-Setup files are written locally by `simplycubed init` and merged by a human, because the runtime holds no `workflows` permission and cannot add its own workflow files.
+Setup files are generated locally by `simplycubed init` and then merged by a human, because the runtime holds no `workflows` permission and cannot add or update workflow files on its own.
 
 The GitHub App identity is `simplycubed-code[bot]`. That bot is the single audit signal for everything the agent does.
 
 ## Getting started
 
-Start with the adopter quickstart in [docs/setup.md](docs/setup.md). It covers the shipped path from CLI install to the first issue-driven pull request, including where the Azure endpoint and key live for local CLI runs versus GitHub Actions.
+Start with [docs/setup.md](docs/setup.md). It walks through customer installation in a repository you control, from CLI install through the first issue-driven pull request.
 
 ## Installation
 
@@ -123,9 +135,7 @@ That prints `0.1.7`. Pre-1.0 releases follow semver with the usual caveat: minor
 versions may still change behavior. Pin the tag you have validated rather than
 floating on `@latest`.
 
-Then follow the [quickstart in `docs/setup.md`](docs/setup.md) to write the repo
-config, add the caller workflow, set the Azure values, and open the first pull
-request.
+Then follow the [setup guide in `docs/setup.md`](docs/setup.md) to add the repository config, install the GitHub workflow, set the required credentials, and run the first issue through the system.
 
 ## Install into your GitHub
 
