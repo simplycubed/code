@@ -22,12 +22,16 @@ You need:
 
 ## Install and configure
 
-1. Install the CLI:
+1. Install the CLI. The current release is `v0.1.9`; replace
+   `<release-tag>` below with that tag, or with whichever release you have
+   validated:
 
 ```sh
-go install github.com/simplycubed/code/cmd/simplycubed@v0.1.9
+go install github.com/simplycubed/code/cmd/simplycubed@<release-tag>
 simplycubed version
 ```
+
+With `v0.1.9`, `simplycubed version` prints `0.1.9`.
 
 2. In the target repository, generate the setup files and labels:
 
@@ -244,15 +248,23 @@ Azure endpoint and API key.
 
 ## Watching it run before it writes
 
-Two commands answer "is this configured correctly" without changing anything.
+Two commands answer "is this configured correctly" without changing anything:
 
-`simplycubed preflight` validates the repository config and the engine settings
-and exits. It is what the workflow runs before installing the rest of the
-toolchain, so a misconfigured repository finds out in seconds.
+```sh
+simplycubed preflight
+```
 
-`simplycubed run owner/repo#N --dry-run` runs the whole loop, including the
-engine and your real gate, and skips the push and every GitHub write. It prints
-what it would have done instead, and in Actions writes that to the run summary.
+That validates the repository config and the engine settings and exits. It is
+what the workflow runs before installing the rest of the toolchain, so a
+misconfigured repository finds out in seconds.
+
+```sh
+simplycubed run owner/repo#N --dry-run
+```
+
+That runs the whole loop, including the engine and your real gate, and skips
+the push and every GitHub write. It prints what it would have done instead, and
+in Actions writes that to the run summary.
 
 If something goes wrong, [troubleshooting.md](troubleshooting.md) starts from
 the symptom.
@@ -261,7 +273,11 @@ the symptom.
 
 If your Azure deployment name is not `gpt-5.4`, set it explicitly.
 
-- Local CLI: pass `--model <deployment-name>`.
+- Local CLI:
+
+  ```sh
+  simplycubed run owner/repo#N --repo-dir . --model <deployment-name>
+  ```
 - GitHub Actions: uncomment and set `model:` in
   `.github/workflows/simplycubed.yml`.
 

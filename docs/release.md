@@ -1,19 +1,19 @@
 # Release Process
 
-`v0.1.0` is the first tagged SimplyCubed Code release. A tag means the code at
+`v0.1.0` was the first tagged SimplyCubed Code release. A tag means the code at
 that commit passed the repo gate (`make check`), the CLI version reports that
 same release, and the maintainer published release notes for it.
 
 ## Versioning
 
-Tags use semver with a leading `v` (`v0.1.0`, `v0.2.0`, ...). Before `v1.0.0`,
-minor releases may still make breaking changes when the product or CLI shape
-needs it. Patch releases are for backward-compatible fixes on an existing line.
+Tags use semver with a leading `v` (`vX.Y.Z`). Before `v1.0.0`, minor releases
+may still make breaking changes when the product or CLI shape needs it. Patch
+releases are for backward-compatible fixes on an existing line.
 
 ## Cutting a release
 
 Run the **tag-release** workflow from the Actions tab and give it the version
-(`v0.1.6`). It checks out the remote tip of the default branch, verifies the
+(`vX.Y.Z`). It checks out the remote tip of the default branch, verifies the
 release is consistent, runs the gate, and creates the tag. Pushing that tag
 triggers the release workflow, which publishes the notes.
 
@@ -42,6 +42,6 @@ For each tag:
 
 ## Binary releases
 
-For `v0.1.0`, binary archives are deferred. The supported install path is
+For now, binary archives are deferred. The supported install path is
 `go install ...@<tag>`. If binary releases are added later, use GitHub Releases
 and stamp the same version via `-ldflags`.

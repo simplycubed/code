@@ -31,7 +31,9 @@ Each job mints its own installation token scoped to one repository with
 `contents`, `issues`, and `pull-requests` permissions only.
 
 `v0.1.9` is the current release. `go install
-github.com/simplycubed/code/cmd/simplycubed@v0.1.9` works today. `v0.1.2` and `v0.1.4` are retracted in `go.mod` because those tags pointed at the wrong
+github.com/simplycubed/code/cmd/simplycubed@<release-tag>` works today when
+`<release-tag>` is the release you want to pin, including `v0.1.9`. `v0.1.2`
+and `v0.1.4` are retracted in `go.mod` because those tags pointed at the wrong
 commits.
 
 Upgrade from anything earlier. `v0.1.7` has a duplicate `env:` key in its copy

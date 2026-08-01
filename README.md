@@ -4,7 +4,7 @@
 
 SimplyCubed Code is an autonomous coding agent you install into your own GitHub. Your team files an issue, the agent prepares a pull request in your repository, and one of your reviewers decides whether it ships.
 
-> Beta, at `v0.1.9`. Product overview: [simplycubed.com/code](https://simplycubed.com/code?utm_source=github&utm_medium=readme&utm_campaign=code). See [Status](#status).
+> Beta. Current release: `v0.1.9`. Product overview: [simplycubed.com/code](https://simplycubed.com/code?utm_source=github&utm_medium=readme&utm_campaign=code). See [Status](#status).
 
 ### Try it without letting it write anything
 
@@ -124,16 +124,18 @@ Start with [docs/setup.md](docs/setup.md). It walks through customer installatio
 
 ## Installation
 
-Install the pinned release you want to run:
+Install the pinned release you want to run. The current release is `v0.1.9`;
+replace `<release-tag>` below with that tag, or with whichever release you have
+validated:
 
 ```sh
-go install github.com/simplycubed/code/cmd/simplycubed@v0.1.9
+go install github.com/simplycubed/code/cmd/simplycubed@<release-tag>
 simplycubed version
 ```
 
-That prints `0.1.7`. Pre-1.0 releases follow semver with the usual caveat: minor
-versions may still change behavior. Pin the tag you have validated rather than
-floating on `@latest`.
+With `v0.1.9`, that prints `0.1.9`. Pre-1.0 releases follow semver with the
+usual caveat: minor versions may still change behavior. Pin the tag you have
+validated rather than floating on `@latest`.
 
 Then follow the [setup guide in `docs/setup.md`](docs/setup.md) to add the repository config, install the GitHub workflow, set the required credentials, and run the first issue through the system.
 
