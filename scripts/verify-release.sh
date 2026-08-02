@@ -30,14 +30,18 @@ fi
 # <release-tag> with a link to Releases, so they are not pinned here.
 fail=0
 for pin in \
-  "cmd/simplycubed/main.go:latestKnownWorkflowTag = \"${version}\"" \
+  "cmd/simplycubed/main.go:latestKnownWorkflowTag[[:space:]]*= \"${version}\"" \
   "docs/templates/simplycubed-caller.yml:simplycubed.yml@${version}" \
   ".github/workflows/simplycubed.yml:default: ${version}" \
   "README.md:Current release: \`${version}\`"
 do
   file="${pin%%:*}"
   needle="${pin#*:}"
-  if ! grep -qF "${needle}" "${file}"; then
+  # Extended regex, not a fixed string: the Go pin is a constant whose alignment
+  # gofmt controls, so adding another constant to the same block silently broke
+  # an exact match. A release check that a formatter can invalidate is worse
+  # than none, because it fails on the one change it was meant to guard.
+  if ! grep -qE "${needle}" "${file}"; then
     echo "${file} does not pin ${version} (expected to find: ${needle})" >&2
     fail=1
   fi
