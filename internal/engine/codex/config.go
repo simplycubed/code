@@ -17,7 +17,7 @@ type ProviderConfig struct {
 	// (e.g. "https://<resource>.openai.azure.com/openai/v1").
 	BaseURL string
 	// EnvKey is the NAME of the environment variable holding the API key
-	// (e.g. "AZURE_OPENAI_API_KEY"). Never the value.
+	// (e.g. "SIMPLYCUBED_AZURE_OPENAI_API_KEY"). Never the value.
 	EnvKey string
 	// WireAPI is the codex wire protocol; defaults to "responses".
 	WireAPI string

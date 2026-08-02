@@ -108,8 +108,8 @@ flags (both commands):
   --state-dir   where worktrees and the generated config live
 
 environment (engine settings; never committed to a repo):
-  AZURE_OPENAI_ENDPOINT   e.g. https://<resource>.openai.azure.com
-  AZURE_OPENAI_API_KEY    the key, read by name and never written to disk
+  SIMPLYCUBED_AZURE_OPENAI_ENDPOINT   e.g. https://<resource>.openai.azure.com
+  SIMPLYCUBED_AZURE_OPENAI_API_KEY    the key, read by name and never written to disk
 `, buildinfo.Version)
 }
 
@@ -149,19 +149,19 @@ func engineEnv(cfg *config.Config) (string, error) {
 	if cfg != nil && cfg.Engine == "claude" {
 		return "", nil
 	}
-	endpoint := strings.TrimRight(os.Getenv("AZURE_OPENAI_ENDPOINT"), "/")
+	endpoint := strings.TrimRight(os.Getenv("SIMPLYCUBED_AZURE_OPENAI_ENDPOINT"), "/")
 	if endpoint == "" {
-		return "", fmt.Errorf("AZURE_OPENAI_ENDPOINT is not set. It is a repository variable on your own repository; a reusable workflow never inherits variables from SimplyCubed")
+		return "", fmt.Errorf("SIMPLYCUBED_AZURE_OPENAI_ENDPOINT is not set. It is a repository variable on your own repository; a reusable workflow never inherits variables from SimplyCubed")
 	}
 	u, err := url.Parse(endpoint)
 	if err != nil {
-		return "", fmt.Errorf("AZURE_OPENAI_ENDPOINT is not a valid URL: %w", err)
+		return "", fmt.Errorf("SIMPLYCUBED_AZURE_OPENAI_ENDPOINT is not a valid URL: %w", err)
 	}
 	if u.Scheme != "https" || u.Host == "" {
-		return "", fmt.Errorf("AZURE_OPENAI_ENDPOINT must be an https URL like https://<resource>.openai.azure.com, got %q", endpoint)
+		return "", fmt.Errorf("SIMPLYCUBED_AZURE_OPENAI_ENDPOINT must be an https URL like https://<resource>.openai.azure.com, got %q", endpoint)
 	}
-	if os.Getenv("AZURE_OPENAI_API_KEY") == "" {
-		return "", fmt.Errorf("AZURE_OPENAI_API_KEY is not set. It is a repository secret on your own repository; a reusable workflow never inherits secrets from SimplyCubed")
+	if os.Getenv("SIMPLYCUBED_AZURE_OPENAI_API_KEY") == "" {
+		return "", fmt.Errorf("SIMPLYCUBED_AZURE_OPENAI_API_KEY is not set. It is a repository secret on your own repository; a reusable workflow never inherits secrets from SimplyCubed")
 	}
 	return endpoint, nil
 }
@@ -463,7 +463,7 @@ func prepare(name string, argv []string) (*commonFlags, []string, error) {
 		if _, err := codex.WriteConfig(codexHome, codex.ProviderConfig{
 			Model:   *model,
 			BaseURL: endpoint + "/openai/v1",
-			EnvKey:  "AZURE_OPENAI_API_KEY",
+			EnvKey:  "SIMPLYCUBED_AZURE_OPENAI_API_KEY",
 		}); err != nil {
 			return nil, nil, fmt.Errorf("write codex config: %w", err)
 		}
@@ -474,7 +474,7 @@ func prepare(name string, argv []string) (*commonFlags, []string, error) {
 		prefix = config.DefaultLabelPrefix
 	}
 
-	forge := &forgegh.Forge{StateLabels: app.StateLabels(prefix), Self: os.Getenv("SIMPLYCUBED_SELF_LOGIN")}
+	forge := &forgegh.Forge{StateLabels: app.StateLabels(prefix), Self: os.Getenv("SIMPLYCUBED_GH_APP_LOGIN")}
 	dry := *dryRun || os.Getenv("SIMPLYCUBED_DRY_RUN") != ""
 	// When the caller did not name the identity, ask the credential who it is.
 	// The workflow used to do this with a gh graphql call and hand the answer
@@ -661,10 +661,14 @@ func initCmd(argv []string, stdout io.Writer) error {
 	fmt.Fprintln(stdout, "  - disable the App webhook, set install visibility to Any account, and install it on the repo")
 	fmt.Fprintln(stdout, "  - write the real gate in .github/simplycubed.yml")
 	fmt.Fprintln(stdout, "  - verify that gate is green on your main branch")
-	fmt.Fprintln(stdout, "  - set the SIMPLYCUBED_GH_APP_CLIENT_ID repo variable to the App Client ID, the Iv23 string on the App settings page")
-	fmt.Fprintln(stdout, "  - add the SIMPLYCUBED_GH_APP_PRIVATE_KEY repo secret with the full PEM, including BEGIN/END lines")
-	fmt.Fprintln(stdout, "  - set the AZURE_OPENAI_ENDPOINT repo variable")
-	fmt.Fprintln(stdout, "  - add the AZURE_OPENAI_API_KEY repo secret")
+	fmt.Fprintln(stdout, "  - add two repository VARIABLES, under Settings > Secrets and variables > Actions > Variables:")
+	fmt.Fprintln(stdout, "      SIMPLYCUBED_GH_APP_CLIENT_ID       the App Client ID, the Iv23 string on the App settings page")
+	fmt.Fprintln(stdout, "      SIMPLYCUBED_AZURE_OPENAI_ENDPOINT  e.g. https://<resource>.openai.azure.com")
+	fmt.Fprintln(stdout, "  - add two repository SECRETS, on the Secrets tab of that same page:")
+	fmt.Fprintln(stdout, "      SIMPLYCUBED_GH_APP_PRIVATE_KEY     the full PEM, including the BEGIN and END lines")
+	fmt.Fprintln(stdout, "      SIMPLYCUBED_AZURE_OPENAI_API_KEY   the Azure OpenAI key")
+	fmt.Fprintln(stdout, "    Variables and Secrets are different tabs. A value filed under the wrong one reads back")
+	fmt.Fprintln(stdout, "    as empty, and the run fails without saying why.")
 	fmt.Fprintln(stdout, "  - merge the PR containing the config and workflow changes")
 	fmt.Fprintln(stdout, "  - run the self-test once: gh workflow run simplycubed-selftest")
 	fmt.Fprintln(stdout, "  - delete .github/workflows/simplycubed-selftest.yml once it passes")

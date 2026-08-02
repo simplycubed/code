@@ -17,10 +17,10 @@ jobs:
       github-app-client-id: ${{ vars.SIMPLYCUBED_GH_APP_CLIENT_ID }}
       issue-number: ${{ github.event.issue.number }}
       actor-login: ${{ github.event.sender.login }}
-      azure-openai-endpoint: ${{ vars.AZURE_OPENAI_ENDPOINT }}
+      azure-openai-endpoint: ${{ vars.SIMPLYCUBED_AZURE_OPENAI_ENDPOINT }}
       # model: my-gpt-5-4-deployment
     secrets:
-      azure-openai-api-key: ${{ secrets.AZURE_OPENAI_API_KEY }}
+      azure-openai-api-key: ${{ secrets.SIMPLYCUBED_AZURE_OPENAI_API_KEY }}
       github-app-private-key: ${{ secrets.SIMPLYCUBED_GH_APP_PRIVATE_KEY }}
 
   address:
@@ -33,10 +33,10 @@ jobs:
       github-app-client-id: ${{ vars.SIMPLYCUBED_GH_APP_CLIENT_ID }}
       pr-number: ${{ github.event.pull_request.number }}
       actor-login: ${{ github.event.review.user.login }}
-      azure-openai-endpoint: ${{ vars.AZURE_OPENAI_ENDPOINT }}
+      azure-openai-endpoint: ${{ vars.SIMPLYCUBED_AZURE_OPENAI_ENDPOINT }}
       # model: my-gpt-5-4-deployment
     secrets:
-      azure-openai-api-key: ${{ secrets.AZURE_OPENAI_API_KEY }}
+      azure-openai-api-key: ${{ secrets.SIMPLYCUBED_AZURE_OPENAI_API_KEY }}
       github-app-private-key: ${{ secrets.SIMPLYCUBED_GH_APP_PRIVATE_KEY }}
 
   comment:
@@ -58,7 +58,7 @@ jobs:
       issue-number: ${{ github.event.issue.pull_request == null && github.event.issue.number || '' }}
       pr-number: ${{ github.event.issue.pull_request != null && github.event.issue.number || '' }}
       actor-login: ${{ github.event.comment.user.login }}
-      azure-openai-endpoint: ${{ vars.AZURE_OPENAI_ENDPOINT }}
+      azure-openai-endpoint: ${{ vars.SIMPLYCUBED_AZURE_OPENAI_ENDPOINT }}
     secrets:
-      azure-openai-api-key: ${{ secrets.AZURE_OPENAI_API_KEY }}
+      azure-openai-api-key: ${{ secrets.SIMPLYCUBED_AZURE_OPENAI_API_KEY }}
       github-app-private-key: ${{ secrets.SIMPLYCUBED_GH_APP_PRIVATE_KEY }}

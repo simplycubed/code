@@ -89,16 +89,16 @@ jobs:
         if: ${{ inputs.engine != '' }}
         env:
           ENGINE: ${{ inputs.engine }}
-          AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT }}
-          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+          SIMPLYCUBED_AZURE_OPENAI_ENDPOINT: ${{ vars.SIMPLYCUBED_AZURE_OPENAI_ENDPOINT }}
+          SIMPLYCUBED_AZURE_OPENAI_API_KEY: ${{ secrets.SIMPLYCUBED_AZURE_OPENAI_API_KEY }}
         run: |
           # This is the check that matters most, and the one no local run can make
           # for you: the engine's sandbox uses kernel features a runner may not
           # grant. When it cannot start, the agent silently does nothing and the
           # run still reports success.
           if [ "${ENGINE}" = "codex" ]; then
-            [ -n "${AZURE_OPENAI_ENDPOINT}" ] || { echo "FAIL: AZURE_OPENAI_ENDPOINT is not set (repository VARIABLE)." >&2; exit 1; }
-            [ -n "${AZURE_OPENAI_API_KEY}" ] || { echo "FAIL: AZURE_OPENAI_API_KEY is not set (repository SECRET)." >&2; exit 1; }
+            [ -n "${SIMPLYCUBED_AZURE_OPENAI_ENDPOINT}" ] || { echo "FAIL: SIMPLYCUBED_AZURE_OPENAI_ENDPOINT is not set (repository VARIABLE)." >&2; exit 1; }
+            [ -n "${SIMPLYCUBED_AZURE_OPENAI_API_KEY}" ] || { echo "FAIL: SIMPLYCUBED_AZURE_OPENAI_API_KEY is not set (repository SECRET)." >&2; exit 1; }
             npm install -g @openai/codex@0.146.0 >/dev/null 2>&1
             out="$(codex exec --skip-git-repo-check -s workspace-write -C . 'Run: echo SELFTEST_OK' 2>&1 || true)"
             if printf '%s' "${out}" | grep -q "bwrap"; then

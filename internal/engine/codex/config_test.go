@@ -11,7 +11,7 @@ func TestWriteConfigRendersProviderAndNeverTheKeyValue(t *testing.T) {
 	path, err := WriteConfig(home, ProviderConfig{
 		Model:   "gpt-5.4",
 		BaseURL: "https://example-resource.openai.azure.com/openai/v1",
-		EnvKey:  "AZURE_OPENAI_API_KEY",
+		EnvKey:  "SIMPLYCUBED_AZURE_OPENAI_API_KEY",
 	})
 	if err != nil {
 		t.Fatalf("WriteConfig: %v", err)
@@ -28,7 +28,7 @@ func TestWriteConfigRendersProviderAndNeverTheKeyValue(t *testing.T) {
 		`model_provider = "azure"`,
 		`[model_providers.azure]`,
 		`base_url = "https://example-resource.openai.azure.com/openai/v1"`,
-		`env_key = "AZURE_OPENAI_API_KEY"`,
+		`env_key = "SIMPLYCUBED_AZURE_OPENAI_API_KEY"`,
 		`wire_api = "responses"`, // default applied
 	} {
 		if !strings.Contains(got, want) {
@@ -39,7 +39,7 @@ func TestWriteConfigRendersProviderAndNeverTheKeyValue(t *testing.T) {
 	// The file references the key by name only. A value must never be written.
 	// (A real key would look like a long token; assert the assignment form is a
 	// bare name, not name=<secret>.)
-	if strings.Contains(got, "AZURE_OPENAI_API_KEY=") {
+	if strings.Contains(got, "SIMPLYCUBED_AZURE_OPENAI_API_KEY=") {
 		t.Fatal("config appears to contain a key value, not just the env-var name")
 	}
 }
