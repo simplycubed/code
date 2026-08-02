@@ -3,6 +3,51 @@
 All notable changes are recorded here and summarized again in the matching
 GitHub release notes for each tag.
 
+## v0.3.0
+
+**Comment commands address your own App.** v0.2.0 replaced `@simplycubed-code`
+with `/simplycubed`, which fixed the multi-tenant bug and gave up the only thing
+that makes a handle worth having. GitHub offers accounts **with repository
+access** in its autocomplete, so a real mention completes after someone types
+`@a` without them knowing the bot's name. A prefix that is not an account cannot
+do that, and typing `/` opens GitHub's own menu, which is a fixed set of five
+built-ins and matches nothing.
+
+**Breaking.** `.github/simplycubed.yml` gains a required `appName:`,
+`simplycubed init` requires `--app-name`, and the comment prefix changes again.
+Re-run `simplycubed init --workflow --app-name <your-app>` to regenerate both
+files.
+
+- **`appName:` is the source of truth**, and the parser, help text,
+  unknown-command reply, and wrong-surface replies all render from it. The agent
+  can no longer tell anyone to mention a different account. It accepts
+  `acme-code`, `@acme-code`, or `acme-code[bot]`, because all three are how
+  people write the same App.
+- **The workflow trigger stays a literal**, written by `init` from that same
+  value. A workflow decides whether to start before any code runs, so matching
+  loosely there would mint a token, check out, install Go, install the CLI and
+  start a sandbox — roughly thirty seconds — every time someone mentioned a
+  colleague, to then do nothing.
+- **`preflight` fails when the two disagree.** The handle necessarily lives in
+  two files and the App can push only one of them, since it holds no `workflows`
+  permission by design. Drift is silent in the worst way: comments stop working
+  with no error anywhere. The check names both values and says to re-run `init`.
+- **`--app-name` is required at first install**, with an error that explains the
+  name is yours rather than merely demanding a flag. Re-running `init` without
+  it keeps whatever the config already says, so upgrading cannot silently change
+  the handle a team already types.
+- The install commands in the README and `docs/setup.md` show `<release-tag>`
+  with a link to Releases, and `scripts/verify-release.sh` now also pins the
+  README's "Current release" banner. v0.2.0 shipped with that banner still
+  announcing v0.1.9, because it was prose rather than a checked pin.
+- **`scripts/verify-release.sh` no longer breaks on formatting.** It matched the
+  Go version pin as a fixed string, so gofmt realigning that constant made the
+  check fail on the very release it was meant to guard. It now matches with a
+  regex that tolerates the alignment.
+- The README leads with what the product is. It opened with a dry run, ten lines
+  before the overview, and carried three consecutive install sections that all
+  pointed at `docs/setup.md`.
+
 ## v0.2.0
 
 **This release makes the product installable by someone who is not us.** Every

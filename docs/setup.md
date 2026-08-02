@@ -30,7 +30,7 @@ go install github.com/simplycubed/code/cmd/simplycubed@<release-tag>
 simplycubed version
 ```
 
-With `v0.2.0`, `simplycubed version` prints `0.2.0`.
+With `v0.3.0`, `simplycubed version` prints `0.3.0`.
 
 2. In the target repository, generate the setup files and labels:
 
