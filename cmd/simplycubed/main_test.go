@@ -515,10 +515,10 @@ func TestEngineEnvRejectsAnUnparseableEndpoint(t *testing.T) {
 func TestDispatchRoutesCommand(t *testing.T) {
 	var out, errOut bytes.Buffer
 	// help is the one command that needs nothing else configured.
-	if code := dispatch([]string{"command", "--body", "@simplycubed-code help"}, &out, &errOut); code != 0 {
+	if code := dispatch([]string{"command", "--body", "/simplycubed help"}, &out, &errOut); code != 0 {
 		t.Fatalf("exit = %d, want 0", code)
 	}
-	if !strings.Contains(out.String(), "@simplycubed-code go") {
+	if !strings.Contains(out.String(), "/simplycubed go") {
 		t.Fatalf("stdout = %q, want the help text", out.String())
 	}
 }
@@ -704,14 +704,14 @@ func TestCommandCmdRoutesByCommentBody(t *testing.T) {
 		f := stubCommentForge(t, nil)
 		var out bytes.Buffer
 		defer func() {
-			if len(f.Comments) != 1 || !strings.Contains(f.Comments[0], "@simplycubed-code go") {
+			if len(f.Comments) != 1 || !strings.Contains(f.Comments[0], "/simplycubed go") {
 				t.Fatalf("help must be answered on the thread, posted: %v", f.Comments)
 			}
 		}()
-		if err := commandCmd([]string{"--body", "@simplycubed-code help", "o/r#1"}, &out); err != nil {
+		if err := commandCmd([]string{"--body", "/simplycubed help", "o/r#1"}, &out); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if !strings.Contains(out.String(), "@simplycubed-code go") {
+		if !strings.Contains(out.String(), "/simplycubed go") {
 			t.Fatalf("help should list the commands, got: %q", out.String())
 		}
 	})
@@ -720,7 +720,7 @@ func TestCommandCmdRoutesByCommentBody(t *testing.T) {
 	// that fires whenever anyone mentions the bot in passing.
 	t.Run("an unrecognised comment does nothing", func(t *testing.T) {
 		var out bytes.Buffer
-		if err := commandCmd([]string{"--body", "thanks @simplycubed-code", "o/r#1"}, &out); err != nil {
+		if err := commandCmd([]string{"--body", "thanks /simplycubed", "o/r#1"}, &out); err != nil {
 			t.Fatalf("an unrecognised comment must not be an error: %v", err)
 		}
 		if !strings.Contains(out.String(), "nothing to do") {
@@ -824,12 +824,12 @@ func TestTakeBody(t *testing.T) {
 		wantRest []string
 	}{
 		"separate value": {
-			[]string{"--body", "@simplycubed-code go", "--actor", "me", "o/r#1"},
-			"@simplycubed-code go", []string{"--actor", "me", "o/r#1"},
+			[]string{"--body", "/simplycubed go", "--actor", "me", "o/r#1"},
+			"/simplycubed go", []string{"--actor", "me", "o/r#1"},
 		},
 		"equals form": {
-			[]string{"--body=@simplycubed-code address", "--dry-run", "o/r#2"},
-			"@simplycubed-code address", []string{"--dry-run", "o/r#2"},
+			[]string{"--body=/simplycubed address", "--dry-run", "o/r#2"},
+			"/simplycubed address", []string{"--dry-run", "o/r#2"},
 		},
 		"absent": {
 			[]string{"--actor", "me", "o/r#1"}, "", []string{"--actor", "me", "o/r#1"},
@@ -872,8 +872,8 @@ func TestCommandCmdDoesNotRunOnUnrecognisedComments(t *testing.T) {
 	// because it once started the work it was asking not to do.
 	t.Run("addressed but unrecognised gets an answer", func(t *testing.T) {
 		for _, body := range []string{
-			"@simplycubed-code please do not do this one",
-			"@simplycubed-code",
+			"/simplycubed please do not do this one",
+			"/simplycubed",
 		} {
 			f := stubCommentForge(t, nil)
 			var out bytes.Buffer
@@ -884,7 +884,7 @@ func TestCommandCmdDoesNotRunOnUnrecognisedComments(t *testing.T) {
 			if len(f.Comments) != 1 {
 				t.Fatalf("%q should be answered on the thread, posted: %v", body, f.Comments)
 			}
-			if !strings.Contains(f.Comments[0], "@simplycubed-code go") {
+			if !strings.Contains(f.Comments[0], "/simplycubed go") {
 				t.Fatalf("%q: the answer should name the vocabulary, got: %q", body, f.Comments[0])
 			}
 		}
@@ -895,7 +895,7 @@ func TestCommandCmdDoesNotRunOnUnrecognisedComments(t *testing.T) {
 	t.Run("a passing mention stays silent", func(t *testing.T) {
 		f := stubCommentForge(t, nil)
 		var out bytes.Buffer
-		err := commandCmd([]string{"--body", "thanks @simplycubed-code go", "--repo-dir", t.TempDir(), "o/r#1"}, &out)
+		err := commandCmd([]string{"--body", "thanks /simplycubed go", "--repo-dir", t.TempDir(), "o/r#1"}, &out)
 		if err != nil {
 			t.Fatalf("should be a quiet no-op, got: %v", err)
 		}
@@ -916,13 +916,13 @@ func TestCommandCmdAnswersAVerbAimedAtTheWrongSurface(t *testing.T) {
 	t.Run("address on an issue names go", func(t *testing.T) {
 		f := stubCommentForge(t, nil) // #1 is an issue
 		var out bytes.Buffer
-		if err := commandCmd([]string{"--body", "@simplycubed-code address this issue.", "--repo-dir", t.TempDir(), "o/r#1"}, &out); err != nil {
+		if err := commandCmd([]string{"--body", "/simplycubed address this issue.", "--repo-dir", t.TempDir(), "o/r#1"}, &out); err != nil {
 			t.Fatalf("a wrong verb must not fail the run: %v", err)
 		}
 		if len(f.Comments) != 1 {
 			t.Fatalf("should have answered on the issue, posted: %v", f.Comments)
 		}
-		if !strings.Contains(f.Comments[0], "@simplycubed-code go") {
+		if !strings.Contains(f.Comments[0], "/simplycubed go") {
 			t.Fatalf("the answer must name the verb that applies, got: %q", f.Comments[0])
 		}
 	})
@@ -930,13 +930,13 @@ func TestCommandCmdAnswersAVerbAimedAtTheWrongSurface(t *testing.T) {
 	t.Run("go on a pull request names address", func(t *testing.T) {
 		f := stubCommentForge(t, map[int]bool{7: true})
 		var out bytes.Buffer
-		if err := commandCmd([]string{"--body", "@simplycubed-code go", "--repo-dir", t.TempDir(), "o/r#7"}, &out); err != nil {
+		if err := commandCmd([]string{"--body", "/simplycubed go", "--repo-dir", t.TempDir(), "o/r#7"}, &out); err != nil {
 			t.Fatalf("a wrong verb must not fail the run: %v", err)
 		}
 		if len(f.PRComments) != 1 {
 			t.Fatalf("should have answered on the pull request, posted: %v", f.PRComments)
 		}
-		if !strings.Contains(f.PRComments[0], "@simplycubed-code address") {
+		if !strings.Contains(f.PRComments[0], "/simplycubed address") {
 			t.Fatalf("the answer must name the verb that applies, got: %q", f.PRComments[0])
 		}
 	})
@@ -945,7 +945,7 @@ func TestCommandCmdAnswersAVerbAimedAtTheWrongSurface(t *testing.T) {
 	t.Run("a dry run records the answer instead of posting it", func(t *testing.T) {
 		f := stubCommentForge(t, nil)
 		var out bytes.Buffer
-		if err := commandCmd([]string{"--body", "@simplycubed-code address", "--dry-run", "--repo-dir", t.TempDir(), "o/r#1"}, &out); err != nil {
+		if err := commandCmd([]string{"--body", "/simplycubed address", "--dry-run", "--repo-dir", t.TempDir(), "o/r#1"}, &out); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if len(f.Comments) != 0 {
@@ -966,8 +966,8 @@ func TestCommandCmdRoutesRecognisedVerbsToTheirLoops(t *testing.T) {
 	t.Setenv("SIMPLYCUBED_AZURE_OPENAI_API_KEY", "k")
 
 	for name, body := range map[string]string{
-		"go routes to run":          "@simplycubed-code go",
-		"address routes to address": "@simplycubed-code address",
+		"go routes to run":          "/simplycubed go",
+		"address routes to address": "/simplycubed address",
 	} {
 		// #1 is an issue and #7 a pull request, so each verb is aimed at the
 		// surface it applies to and reaches its loop rather than being answered.
@@ -1113,13 +1113,13 @@ func TestAnswerPathEdges(t *testing.T) {
 	t.Run("no ref means echo only", func(t *testing.T) {
 		f := stubCommentForge(t, nil)
 		var out bytes.Buffer
-		if err := commandCmd([]string{"--body", "@simplycubed-code help"}, &out); err != nil {
+		if err := commandCmd([]string{"--body", "/simplycubed help"}, &out); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if len(f.Comments) != 0 {
 			t.Fatalf("nothing to post to, posted: %v", f.Comments)
 		}
-		if !strings.Contains(out.String(), "@simplycubed-code go") {
+		if !strings.Contains(out.String(), "/simplycubed go") {
 			t.Fatalf("the answer should still reach stdout, got %q", out.String())
 		}
 	})
@@ -1133,7 +1133,7 @@ func TestAnswerPathEdges(t *testing.T) {
 		}
 		t.Cleanup(func() { newCommentForge = prev })
 		var out bytes.Buffer
-		err := commandCmd([]string{"--body", "@simplycubed-code address", "o/r#1"}, &out)
+		err := commandCmd([]string{"--body", "/simplycubed address", "o/r#1"}, &out)
 		if err == nil {
 			t.Fatal("want an error when the surface cannot be resolved")
 		}
@@ -1142,7 +1142,7 @@ func TestAnswerPathEdges(t *testing.T) {
 		}
 		// The same must hold on the reply path, which help and an unrecognised
 		// comment both take.
-		if err := commandCmd([]string{"--body", "@simplycubed-code help", "o/r#1"}, &out); err == nil {
+		if err := commandCmd([]string{"--body", "/simplycubed help", "o/r#1"}, &out); err == nil {
 			t.Fatal("want an error on the reply path too")
 		}
 	})
@@ -1151,7 +1151,7 @@ func TestAnswerPathEdges(t *testing.T) {
 		t.Setenv("SIMPLYCUBED_DRY_RUN", "1")
 		f := stubCommentForge(t, nil)
 		var out bytes.Buffer
-		if err := commandCmd([]string{"--body", "@simplycubed-code address", "o/r#1"}, &out); err != nil {
+		if err := commandCmd([]string{"--body", "/simplycubed address", "o/r#1"}, &out); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if len(f.Comments) != 0 {

@@ -115,7 +115,7 @@ Check what actually triggers a run:
 - A **submitted review** on a pull request. A plain comment in the conversation
   box is a different GitHub event and does not count. Use **Files changed →
   Review changes**.
-- A comment beginning with `@simplycubed-code`, followed by `go`, `address` or
+- A comment beginning with `/simplycubed`, followed by `go`, `address` or
   `help`. The mention has to start the comment, so quoting an earlier one never
   re-triggers anything, and an unrecognised verb does nothing.
 

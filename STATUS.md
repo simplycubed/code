@@ -64,7 +64,7 @@ internal/forge/       GitHub side as an interface (no merge method); gh/ adapter
 internal/vcs/git/     commit, push, and sync-to-PR-head
 internal/describe/    generated PR walkthrough, changes table, and sequence diagram
 internal/verdict/     the reviewer verdict: schema, validation, findings for the fixer
-internal/command/     comment commands (@simplycubed-code go | address | help)
+internal/command/     comment commands (/simplycubed go | address | help)
 internal/forge/dryrun/ records the GitHub writes a dry run skips
 internal/attribution/ the SimplyCubed Code marker on generated commits and PRs
 internal/ledger/      append-only JSONL run events

@@ -7,16 +7,16 @@ import (
 
 func TestParseRecognisesCommands(t *testing.T) {
 	for body, want := range map[string]Kind{
-		"@simplycubed-code go":               Go,
-		"@simplycubed-code run":              Go,
-		"@simplycubed-code address":          Address,
-		"@simplycubed-code fix":              Address,
-		"@simplycubed-code help":             Help,
-		"  @simplycubed-code go  ":           Go,
-		"@simplycubed-code GO":               Go,
-		"@simplycubed-code go, when you can": Go,
-		"@simplycubed-code: address":         Address,
-		"@simplycubed-code address\nthanks":  Address,
+		"/simplycubed go":               Go,
+		"/simplycubed run":              Go,
+		"/simplycubed address":          Address,
+		"/simplycubed fix":              Address,
+		"/simplycubed help":             Help,
+		"  /simplycubed go  ":           Go,
+		"/simplycubed GO":               Go,
+		"/simplycubed go, when you can": Go,
+		"/simplycubed: address":         Address,
+		"/simplycubed address\nthanks":  Address,
 	} {
 		if got := Parse(body); got != want {
 			t.Fatalf("Parse(%q) = %q, want %q", body, got, want)
@@ -30,13 +30,13 @@ func TestParseIgnoresAnythingNotAddressedToIt(t *testing.T) {
 	for _, body := range []string{
 		"",
 		"looks good to me",
-		"cc @simplycubed-code go",               // mention not at the start
-		"> @simplycubed-code go",                // quoting an earlier comment
-		"I think @simplycubed-code should go",   // prose
-		"@simplycubed-code",                     // no verb
-		"@simplycubed-code please do the thing", // unrecognised verb
-		"@simplycubed-code-experimental go",     // a different bot
-		"@simplycubedcode go",                   // near miss
+		"cc /simplycubed go",               // mention not at the start
+		"> /simplycubed go",                // quoting an earlier comment
+		"I think /simplycubed should go",   // prose
+		"/simplycubed",                     // no verb
+		"/simplycubed please do the thing", // unrecognised verb
+		"/simplycubed-experimental go",     // a different bot
+		"@simplycubedcode go",              // near miss
 	} {
 		if got := Parse(body); got != None {
 			t.Fatalf("Parse(%q) = %q, want None", body, got)
@@ -46,14 +46,14 @@ func TestParseIgnoresAnythingNotAddressedToIt(t *testing.T) {
 
 func TestAddressedSeparatesAnAskFromAPassingMention(t *testing.T) {
 	for body, want := range map[string]bool{
-		"@simplycubed-code go":              true,
-		"@simplycubed-code":                 true,
-		"@simplycubed-code please help me":  true,
-		"  @simplycubed-code: address":      true,
-		"thanks @simplycubed-code":          false,
-		"cc @simplycubed-code go":           false,
-		"@simplycubed-code-experimental go": false,
-		"":                                  false,
+		"/simplycubed go":              true,
+		"/simplycubed":                 true,
+		"/simplycubed please help me":  true,
+		"  /simplycubed: address":      true,
+		"thanks /simplycubed":          false,
+		"cc /simplycubed go":           false,
+		"/simplycubed-experimental go": false,
+		"":                             false,
 	} {
 		if got := Addressed(body); got != want {
 			t.Errorf("Addressed(%q) = %v, want %v", body, got, want)
@@ -68,11 +68,11 @@ func TestMisdirectedPairsAVerbWithItsSurface(t *testing.T) {
 		wrong  bool
 		expect string
 	}{
-		{Go, false, false, ""},                         // go on an issue is the point
-		{Address, true, false, ""},                     // address on a PR is the point
-		{Go, true, true, "@simplycubed-code address"},  // go on a PR: name the other verb
-		{Address, false, true, "@simplycubed-code go"}, // address on an issue: the #98 case
-		{Help, true, false, ""},                        // help applies anywhere
+		{Go, false, false, ""},                    // go on an issue is the point
+		{Address, true, false, ""},                // address on a PR is the point
+		{Go, true, true, "/simplycubed address"},  // go on a PR: name the other verb
+		{Address, false, true, "/simplycubed go"}, // address on an issue: the #98 case
+		{Help, true, false, ""},                   // help applies anywhere
 		{None, false, false, ""},
 	}
 	for _, c := range cases {
@@ -99,5 +99,21 @@ func TestUnknownTextNamesTheVocabulary(t *testing.T) {
 		if !strings.Contains(UnknownText, want) {
 			t.Errorf("UnknownText should mention %q, got %q", want, UnknownText)
 		}
+	}
+}
+
+// The prefix must not be an App handle. App names are globally unique, so a
+// hardcoded @mention matches nothing in an adopter's repository, and because
+// ours is public it renders there as a mention of an account they never
+// installed.
+func TestPrefixIsNotAnAppHandle(t *testing.T) {
+	if strings.HasPrefix(Mention, "@") {
+		t.Fatalf("Mention = %q; an @-handle cannot be right in every adopter's repository", Mention)
+	}
+	if got := Parse("@simplycubed-code go"); got != None {
+		t.Fatalf("Parse(@simplycubed-code go) = %q, want None: the old handle must not still trigger", got)
+	}
+	if got := Parse("/simplycubed go"); got != Go {
+		t.Fatalf("Parse(/simplycubed go) = %q, want Go", got)
 	}
 }

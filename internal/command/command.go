@@ -24,8 +24,15 @@ const (
 	Help Kind = "help"
 )
 
-// Mention is the login the agent answers to.
-const Mention = "@simplycubed-code"
+// Mention is the prefix the agent answers to.
+//
+// Deliberately not an @-mention of the App. GitHub App names are globally
+// unique, so every adopter's App carries a different login; a hardcoded handle
+// matches nothing in their repository, and because ours is public it renders
+// there as a mention of an account they never installed. A fixed prefix that is
+// not a handle needs no templating, keeps one static caller workflow, and
+// behaves identically everywhere.
+const Mention = "/simplycubed"
 
 // Parse reads a comment body and returns the command it carries.
 //
@@ -36,7 +43,7 @@ func Parse(body string) Kind {
 	if !ok {
 		return None
 	}
-	// The mention must be a whole word: @simplycubed-code-experimental is not us.
+	// The prefix must be a whole word: /simplycubed-experimental is not us.
 	if rest != "" && !isSeparator(rest[0]) {
 		return None
 	}
@@ -106,11 +113,11 @@ func Misdirected(k Kind, onPullRequest bool) bool {
 func MisdirectedText(k Kind, onPullRequest bool) string {
 	if k == Go && onPullRequest {
 		return "`go` starts work on an issue and opens a pull request, and this is already a pull request.\n\n" +
-			"To have the current review feedback addressed on this branch, comment `@simplycubed-code address`."
+			"To have the current review feedback addressed on this branch, comment `/simplycubed address`."
 	}
 	if k == Address && !onPullRequest {
 		return "`address` reads the human review feedback on a pull request, and this is an issue, so there is no review to read.\n\n" +
-			"To start work on it, comment `@simplycubed-code go` or apply the `sc:go` label."
+			"To start work on it, comment `/simplycubed go` or apply the `sc:go` label."
 	}
 	return ""
 }
@@ -122,7 +129,7 @@ const UnknownText = "I did not recognise a command in that comment.\n\n" + HelpT
 
 // HelpText lists what the agent understands, for a reply to Help.
 const HelpText = "I understand these, addressed to me at the start of a comment:\n\n" +
-	"- `@simplycubed-code go` on an issue: start work on it, the same as applying the go label.\n" +
-	"- `@simplycubed-code address` on a pull request: address the current review feedback.\n" +
-	"- `@simplycubed-code help`: this message.\n\n" +
+	"- `/simplycubed go` on an issue: start work on it, the same as applying the go label.\n" +
+	"- `/simplycubed address` on a pull request: address the current review feedback.\n" +
+	"- `/simplycubed help`: this message.\n\n" +
 	"I only act on comments from people with write access, and I never merge."
