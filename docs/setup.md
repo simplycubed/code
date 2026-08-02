@@ -22,10 +22,11 @@ You need:
 
 ## Install and configure
 
-1. Install the CLI:
+1. Install the CLI. Replace `<release-tag>` with the version you want from
+   [Releases](https://github.com/simplycubed/code/releases):
 
 ```sh
-go install github.com/simplycubed/code/cmd/simplycubed@v0.2.0
+go install github.com/simplycubed/code/cmd/simplycubed@<release-tag>
 simplycubed version
 ```
 

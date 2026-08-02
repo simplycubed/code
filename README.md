@@ -124,10 +124,11 @@ Start with [docs/setup.md](docs/setup.md). It walks through customer installatio
 
 ## Installation
 
-Install the pinned release you want to run:
+Install the pinned release you want to run. Replace `<release-tag>` with the
+version you want from [Releases](https://github.com/simplycubed/code/releases):
 
 ```sh
-go install github.com/simplycubed/code/cmd/simplycubed@v0.2.0
+go install github.com/simplycubed/code/cmd/simplycubed@<release-tag>
 simplycubed version
 ```
 
