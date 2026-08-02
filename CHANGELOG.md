@@ -3,6 +3,84 @@
 All notable changes are recorded here and summarized again in the matching
 GitHub release notes for each tag.
 
+## v0.2.0
+
+**This release makes the product installable by someone who is not us.** Every
+change below comes from one root cause: it was built by the account that owns
+the GitHub App, so the vendor case and the adopter case had never been
+separated. Four of the defects were only reachable by an adopter, which is why
+none of them had been seen.
+
+**Breaking.** The command prefix and two configuration names change. There are
+no known installations other than this repository, so no migration path is
+provided; set the new names and regenerate the caller workflow.
+
+- **You create your own GitHub App, and `init` now explains how.** The setup
+  instructions told every adopter to create an App named `simplycubed-code`.
+  App names are globally unique and we hold that one, so the step was only
+  performable by the account that already owns it; everyone else got "Name has
+  already been taken". Neither `init` nor the docs said why the App must be
+  theirs: the private key is what mints tokens against their repository, so a
+  shared key would let its holder act on every other installation. That single
+  missing sentence is what made "create a GitHub App" read as busywork we could
+  have done for them. `init` now prints the creation URL, resolved to the
+  organisation form when the repository belongs to one, the three permissions
+  with their access levels, webhook off and why, install visibility and why it
+  is the step most often missed, and where the `Iv23` Client ID and the
+  download-once private key come from.
+- **Comment commands are `/simplycubed`, not `@simplycubed-code`.** An
+  @-mention of our App cannot be right in anyone else's repository: their bot
+  carries a different login, so the trigger matched nothing, and because our App
+  is public the handle rendered there as a mention of an account they had never
+  installed. The parser held the same literal, so templating the workflow
+  trigger alone would not have helped. A prefix that is not a handle needs no
+  templating and keeps one static caller workflow.
+- **Workflow-push restriction is decided by identity, not by our App's name.**
+  The check compared the authenticated login against a hardcoded
+  `simplycubed-code[bot]`, so for every adopter it was false and the pre-flight
+  never ran. They learned about the refusal at push time instead, after a full
+  loop and its model spend. Any `[bot]` login is now restricted; an empty login
+  stays unrestricted, because that is a human running locally and a human can
+  push workflow files.
+- **Escalations name the files that caused them.** "the change touches
+  `.github/workflows/`" left a reader with nothing but the agent's own account
+  of what it had edited, which is not evidence. Working out whether one real
+  escalation was correct cost two investigation rounds and produced a wrong
+  diagnosis. The message now lists the paths git actually reported.
+- **The gate no longer stamps VCS metadata into binaries it throws away.**
+  `go build` failed in the loop's worktree with `error obtaining VCS status:
+  exit status 128` before any repository code compiled, so every agent run
+  reported a red gate for a reason unrelated to the change under test. A gate
+  that cannot run where the loop runs is not a gate.
+- **One naming scheme for the four values an adopter sets.** Two carried the
+  `SIMPLYCUBED_` prefix and two did not, so on an organisation settings page the
+  four did not read as one tool's configuration and nobody auditing later could
+  tell what `AZURE_OPENAI_API_KEY` belonged to. The unprefixed pair was also the
+  conventional name for that credential, so an organisation already using Azure
+  OpenAI either hit a conflict or silently shared one key between this runtime
+  and something unrelated.
+
+  | Section | Name |
+  | --- | --- |
+  | Variables | `SIMPLYCUBED_GH_APP_CLIENT_ID` |
+  | Secrets | `SIMPLYCUBED_GH_APP_PRIVATE_KEY` |
+  | Variables | `SIMPLYCUBED_AZURE_OPENAI_ENDPOINT` (was `AZURE_OPENAI_ENDPOINT`) |
+  | Secrets | `SIMPLYCUBED_AZURE_OPENAI_API_KEY` (was `AZURE_OPENAI_API_KEY`) |
+
+  `SIMPLYCUBED_SELF_LOGIN` becomes `SIMPLYCUBED_GH_APP_LOGIN`; it parsed as
+  "SimplyCubed's login" when it means the bot identity the run holds.
+- **`preflight` checks those four and names the section a missing one belongs
+  in.** Nothing checked them until a real run failed, and the one thing that did
+  was deleted at the end of install: the self-test names the section, then
+  `init` tells the adopter to remove it. Variables and Secrets are different
+  tabs, and a value filed under the wrong one reads back as empty rather than
+  failing, which happened during a real install and was found by reading the
+  caller workflow. A configuration miss now exits `3`, so a caller can tell "go
+  and set this" from a bug without matching on message text.
+- **Removed the `github-app-id` workflow input.** It survived as a fallback for
+  callers that do not exist, and it invited the wrong credential: the name says
+  App *ID*, the numeric one, while the token action needs the `Iv23` client ID.
+
 ## v0.1.9
 
 - **The GitHub Actions runtime does the work now.** Until this release the

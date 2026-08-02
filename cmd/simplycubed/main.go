@@ -138,7 +138,7 @@ gate:
 `
 
 const (
-	latestKnownWorkflowTag = "v0.1.9"
+	latestKnownWorkflowTag = "v0.2.0"
 	callerWorkflowTagToken = "__SIMPLYCUBED_TAG__"
 )
 

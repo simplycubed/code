@@ -11,7 +11,7 @@ on:
 jobs:
   run:
     if: ${{ github.event_name == 'issues' && github.event.label.name == 'sc:go' }}
-    uses: simplycubed/code/.github/workflows/simplycubed.yml@v0.1.9
+    uses: simplycubed/code/.github/workflows/simplycubed.yml@v0.2.0
     with:
       ref: ${{ github.event.issue.number }}
       github-app-client-id: ${{ vars.SIMPLYCUBED_GH_APP_CLIENT_ID }}
@@ -27,7 +27,7 @@ jobs:
     if: >-
       github.event_name == 'pull_request_review' &&
       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.review.author_association)
-    uses: simplycubed/code/.github/workflows/simplycubed.yml@v0.1.9
+    uses: simplycubed/code/.github/workflows/simplycubed.yml@v0.2.0
     with:
       ref: ${{ github.event.pull_request.number }}
       github-app-client-id: ${{ vars.SIMPLYCUBED_GH_APP_CLIENT_ID }}
@@ -50,7 +50,7 @@ jobs:
       github.event.comment.user.type != 'Bot' &&
       startsWith(github.event.comment.body, '/simplycubed') &&
       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
-    uses: simplycubed/code/.github/workflows/simplycubed.yml@v0.1.9
+    uses: simplycubed/code/.github/workflows/simplycubed.yml@v0.2.0
     with:
       ref: ${{ github.event.issue.number }}
       github-app-client-id: ${{ vars.SIMPLYCUBED_GH_APP_CLIENT_ID }}
