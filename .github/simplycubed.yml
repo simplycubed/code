@@ -5,6 +5,11 @@
 # decides whether a change is good.
 labelPrefix: sc
 
+# The App this repository installed. Comment commands address it:
+# "@simplycubed-code go" on an issue starts work. The caller workflow triggers
+# on this same handle, and preflight fails if the two ever disagree.
+appName: simplycubed-code
+
 gate: make check
 
 prDescription: rich

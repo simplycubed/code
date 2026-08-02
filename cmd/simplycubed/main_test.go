@@ -1290,7 +1290,11 @@ func TestPreflightCatchesHandleDrift(t *testing.T) {
 		if err := os.MkdirAll(filepath.Dir(wf), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		body := "on: [issue_comment]\njobs:\n  comment:\n    if: startsWith(github.event.comment.body, '" + trigger + "')\n"
+		// Must look like a caller: the check finds it by the reusable-workflow
+		// call, not by filename.
+		body := "on: [issue_comment]\njobs:\n  comment:\n" +
+			"    uses: simplycubed/code/.github/workflows/simplycubed.yml@v0.3.0\n" +
+			"    if: startsWith(github.event.comment.body, '" + trigger + "')\n"
 		if err := os.WriteFile(wf, []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -1415,5 +1419,35 @@ func TestCommandCmdSurfacesConfigProblems(t *testing.T) {
 	// A malformed --body is rejected before the config is ever read.
 	if err := commandCmd([]string{"--body"}, &out); err == nil {
 		t.Fatal("--body with no value must be an error")
+	}
+}
+
+// init writes the caller as simplycubed.yml, but an adopter can rename it, and
+// in this repository that name belongs to the reusable workflow itself. The
+// drift check has to find the caller by what it calls, or it passes on the
+// wrong file and fails on a valid install.
+func TestDriftCheckFindsTheCallerByContentNotFilename(t *testing.T) {
+	t.Setenv("SIMPLYCUBED_AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
+	t.Setenv("SIMPLYCUBED_AZURE_OPENAI_API_KEY", "k")
+
+	dir := repoWithConfigBody(t, "gate: make check\nappName: acme-code\n")
+	wfDir := filepath.Join(dir, ".github", "workflows")
+	if err := os.MkdirAll(wfDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A workflow with the canonical name that is not a caller must be ignored.
+	if err := os.WriteFile(filepath.Join(wfDir, "simplycubed.yml"), []byte("on: workflow_call\njobs:\n  run:\n    runs-on: ubuntu-latest\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The real caller, under a different name.
+	caller := "on: [issue_comment]\njobs:\n  comment:\n" +
+		"    uses: simplycubed/code/.github/workflows/simplycubed.yml@v0.3.0\n" +
+		"    if: startsWith(github.event.comment.body, '@acme-code')\n"
+	if err := os.WriteFile(filepath.Join(wfDir, "simplycubed-caller.yml"), []byte(caller), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := preflightCmd([]string{"--repo-dir", dir}, io.Discard); err != nil {
+		t.Fatalf("a renamed caller that agrees must pass: %v", err)
 	}
 }
