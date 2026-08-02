@@ -160,3 +160,132 @@ func TestWorkflowPushRefusalEscalatesClearly(t *testing.T) {
 		t.Fatalf("reason = %q", res.Reason)
 	}
 }
+
+// An adopter's escalation used to name our bot, so it pointed at an account
+// they had never installed and a correct escalation read as a misconfiguration.
+// Both paths that escalate must name the identity the run actually holds.
+func TestWorkflowEscalationNamesTheAuthenticatedIdentity(t *testing.T) {
+	t.Run("blocked before the gate", func(t *testing.T) {
+		f := &forgefake.Forge{}
+		eng := &Engine{
+			Runner: enginefake.New(enginefake.Step{Summary: "updated the workflow", Apply: writeFixed}),
+			Gate:   gateChecksFile(),
+			Forge:  f,
+			VCS:    &fakeVCS{workflows: true},
+			Cfg: Config{
+				WorkDir:                t.TempDir(),
+				Branch:                 "loop/1",
+				WorkflowRestrictedPush: true,
+				SelfLogin:              "acme-code[bot]",
+			},
+		}
+
+		res, err := eng.Run(context.Background(), domain.Issue{Repo: "o/r", Number: 1})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if res.Outcome != OutcomeBlocked {
+			t.Fatalf("outcome = %s want blocked", res.Outcome)
+		}
+		if !strings.Contains(res.Reason, "`acme-code[bot]` GitHub App") {
+			t.Fatalf("reason = %q, expected it to name the authenticated identity", res.Reason)
+		}
+		if strings.Contains(res.Reason, "simplycubed-code[bot]") {
+			t.Fatalf("reason = %q, must not name our App in an adopter's repository", res.Reason)
+		}
+	})
+
+	t.Run("blocked by the push refusal", func(t *testing.T) {
+		f := &forgefake.Forge{}
+		eng := &Engine{
+			Runner: enginefake.New(enginefake.Step{Summary: "updated the workflow", Apply: writeFixed}),
+			Gate:   gateChecksFile(),
+			Forge:  f,
+			VCS: &fakeVCS{
+				committed: true,
+				pushErr:   errors.New("git push: remote: error: refusing to allow a GitHub App to create or update workflow `.github/workflows/check.yml` without `workflows` permission"),
+			},
+			Cfg: Config{WorkDir: t.TempDir(), Branch: "loop/1", SelfLogin: "acme-code[bot]"},
+		}
+
+		res, err := eng.Run(context.Background(), domain.Issue{Repo: "o/r", Number: 1})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if res.Outcome != OutcomeBlocked {
+			t.Fatalf("outcome = %s want blocked", res.Outcome)
+		}
+		if !strings.Contains(res.Reason, "`acme-code[bot]` GitHub App") {
+			t.Fatalf("reason = %q, expected it to name the authenticated identity", res.Reason)
+		}
+	})
+
+	t.Run("says a GitHub App when the identity is unknown", func(t *testing.T) {
+		if got := workflowPermissionReason(""); !strings.Contains(got, "authenticated as a GitHub App") {
+			t.Fatalf("reason = %q, expected the generic form when no login is known", got)
+		}
+	})
+}
+
+func TestWorkflowPushReasonOnlyClaimsTheRefusalItRecognises(t *testing.T) {
+	eng := &Engine{Cfg: Config{SelfLogin: "acme-code[bot]"}}
+
+	if got := eng.workflowPushReason(nil); got != "" {
+		t.Fatalf("a successful push must produce no reason, got %q", got)
+	}
+	if got := eng.workflowPushReason(errors.New("git push: remote: connection reset")); got != "" {
+		t.Fatalf("an unrelated push failure must not be reported as a permission problem, got %q", got)
+	}
+}
+
+// The preflight must only stop a run when a workflow file genuinely changed.
+// A false positive escalates work that would have pushed cleanly and tells the
+// operator to do it by hand, which trains them to ignore escalations.
+func TestWorkflowPreflightOnlyBlocksWhenAWorkflowActuallyChanged(t *testing.T) {
+	t.Run("a restricted run with no workflow change proceeds", func(t *testing.T) {
+		f := &forgefake.Forge{}
+		v := &fakeVCS{committed: true, workflows: false}
+		eng := &Engine{
+			Runner: enginefake.New(enginefake.Step{Summary: "changed some Go", Apply: writeFixed}),
+			Gate:   gateChecksFile(),
+			Forge:  f,
+			VCS:    v,
+			Cfg: Config{
+				WorkDir:                t.TempDir(),
+				Branch:                 "loop/1",
+				WorkflowRestrictedPush: true,
+				SelfLogin:              "acme-code[bot]",
+			},
+		}
+
+		res, err := eng.Run(context.Background(), domain.Issue{Repo: "o/r", Number: 1})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if res.Outcome == OutcomeBlocked {
+			t.Fatalf("a change touching no workflow file must not be blocked; reason = %q", res.Reason)
+		}
+		if !v.pushDone || f.PRCount != 1 {
+			t.Fatalf("push=%v PRCount=%d, want the run to reach a pull request", v.pushDone, f.PRCount)
+		}
+	})
+
+	t.Run("an error deciding is surfaced, not treated as a workflow change", func(t *testing.T) {
+		eng := &Engine{
+			Runner: enginefake.New(enginefake.Step{Summary: "changed some Go", Apply: writeFixed}),
+			Gate:   gateChecksFile(),
+			Forge:  &forgefake.Forge{},
+			VCS:    &fakeVCS{committed: true, workflowErr: errors.New("git status: exit status 128")},
+			Cfg: Config{
+				WorkDir:                t.TempDir(),
+				Branch:                 "loop/1",
+				WorkflowRestrictedPush: true,
+			},
+		}
+
+		res, err := eng.Run(context.Background(), domain.Issue{Repo: "o/r", Number: 1})
+		if err == nil && res.Outcome == OutcomeBlocked && strings.Contains(res.Reason, "workflows") {
+			t.Fatal("a failure to decide must not be reported as a workflow-permission problem")
+		}
+	})
+}

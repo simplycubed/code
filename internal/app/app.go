@@ -31,6 +31,10 @@ type Deps struct {
 	Forge     forge.Forge
 	VCS       loop.VCS
 	Worktrees *worktree.Manager
+	// SelfLogin is the authenticated identity, named in a workflow-permission
+	// escalation. Empty for a local run under a human's own credential.
+	SelfLogin string
+
 	// WorkflowRestrictedPush marks runs authenticated as the SimplyCubed GitHub
 	// App, whose token deliberately lacks `workflows` permission.
 	WorkflowRestrictedPush bool
@@ -185,6 +189,7 @@ func AddressPR(ctx context.Context, d Deps, cfg *config.Config, repo string, pr 
 			Branch:                 fb.Branch,
 			LabelPrefix:            prefix,
 			WorkflowRestrictedPush: d.WorkflowRestrictedPush,
+			SelfLogin:              d.SelfLogin,
 			Attribute:              cfg.Attribution,
 		},
 	}
@@ -247,6 +252,7 @@ func Run(ctx context.Context, d Deps, cfg *config.Config, iss domain.Issue, base
 			Branch:                 branch,
 			LabelPrefix:            prefix,
 			WorkflowRestrictedPush: d.WorkflowRestrictedPush,
+			SelfLogin:              d.SelfLogin,
 			Attribute:              cfg.Attribution,
 		},
 	}

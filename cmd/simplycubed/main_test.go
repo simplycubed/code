@@ -1153,3 +1153,38 @@ func TestAnswerPathEdges(t *testing.T) {
 		}
 	})
 }
+
+// The workflow-file preflight used to compare the authenticated login against a
+// hardcoded "simplycubed-code[bot]". Every adopter's App carries a different
+// name, because GitHub App names are globally unique, so the comparison was
+// false for everyone but us and the preflight never ran where it was needed.
+func TestWorkflowRestrictedPushCoversAnyBotIdentity(t *testing.T) {
+	t.Run("an adopter's own bot is restricted", func(t *testing.T) {
+		t.Setenv("AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
+		t.Setenv("AZURE_OPENAI_API_KEY", "k")
+		t.Setenv("SIMPLYCUBED_SELF_LOGIN", "acme-code[bot]")
+		c, _, err := prepare("run", []string{"--repo-dir", repoWithConfig(t), "--state-dir", t.TempDir(), "o/r#1"})
+		if err != nil {
+			t.Fatalf("prepare: %v", err)
+		}
+		if !c.deps.WorkflowRestrictedPush {
+			t.Fatal("a bot identity that is not ours must still be workflow-restricted")
+		}
+		if c.deps.SelfLogin != "acme-code[bot]" {
+			t.Fatalf("SelfLogin = %q, want the authenticated login so the escalation can name it", c.deps.SelfLogin)
+		}
+	})
+
+	t.Run("a human running locally is not restricted", func(t *testing.T) {
+		t.Setenv("AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
+		t.Setenv("AZURE_OPENAI_API_KEY", "k")
+		t.Setenv("SIMPLYCUBED_SELF_LOGIN", "")
+		c, _, err := prepare("run", []string{"--repo-dir", repoWithConfig(t), "--state-dir", t.TempDir(), "o/r#1"})
+		if err != nil {
+			t.Fatalf("prepare: %v", err)
+		}
+		if c.deps.WorkflowRestrictedPush {
+			t.Fatal("an empty login is a human under their own credential, who can push workflow files")
+		}
+	})
+}
