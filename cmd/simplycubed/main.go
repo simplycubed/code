@@ -124,6 +124,18 @@ const starterConfig = `# Repository-local contract for SimplyCubed Code.
 # Keep the label prefix unless you already run another sc:* lifecycle.
 labelPrefix: sc
 
+# The GitHub App you created and installed, without the "[bot]" suffix. Comment
+# commands address it: "@__SIMPLYCUBED_APP_NAME__ go" on an issue starts work.
+#
+# This is yours, not ours. App names are globally unique, so every installation
+# has a different one, and addressing your real bot is what makes GitHub offer
+# it in the autocomplete after someone types "@".
+#
+# The caller workflow triggers on this same handle. If you rename the App,
+# change it here and re-run "simplycubed init --workflow"; preflight fails if
+# the two ever disagree.
+appName: __SIMPLYCUBED_APP_NAME__
+
 # Required. Fill this in with the real gate that is already green on main.
 gate:
 
@@ -138,8 +150,9 @@ gate:
 `
 
 const (
-	latestKnownWorkflowTag = "v0.2.0"
-	callerWorkflowTagToken = "__SIMPLYCUBED_TAG__"
+	latestKnownWorkflowTag     = "v0.2.0"
+	callerWorkflowTagToken     = "__SIMPLYCUBED_TAG__"
+	callerWorkflowAppNameToken = "__SIMPLYCUBED_APP_NAME__"
 )
 
 //go:embed simplycubed-caller.yml.tmpl
@@ -266,6 +279,29 @@ func takeBody(argv []string) (body string, rest []string, err error) {
 	return body, rest, nil
 }
 
+// appNameFor reads the configured App handle from the same --repo-dir the rest
+// of the command will use. It parses only that flag, because run and address
+// own the full flag set and a second copy of it would drift.
+func appNameFor(argv []string) (string, error) {
+	repoDir := "."
+	for i, a := range argv {
+		switch {
+		case a == "--repo-dir" || a == "-repo-dir":
+			if i+1 < len(argv) {
+				repoDir = argv[i+1]
+			}
+		case strings.HasPrefix(a, "--repo-dir="), strings.HasPrefix(a, "-repo-dir="):
+			_, v, _ := strings.Cut(a, "=")
+			repoDir = v
+		}
+	}
+	cfg, err := config.Load(filepath.Join(repoDir, ".github", "simplycubed.yml"))
+	if err != nil {
+		return "", fmt.Errorf("load config: %w", err)
+	}
+	return cfg.AppName, nil
+}
+
 // commandCmd routes a comment addressed to the agent to the matching loop. The
 // comment body is untrusted, so it is parsed into a fixed vocabulary here and
 // never interpreted: an unrecognised comment does nothing at all.
@@ -277,11 +313,18 @@ func commandCmd(argv []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	kind := command.Parse(body)
+	// The handle is per-repository, so the config has to be read before the
+	// comment can be parsed at all: which App this repository installed is the
+	// thing that decides what a command even looks like here.
+	appName, err := appNameFor(rest)
+	if err != nil {
+		return err
+	}
+	kind := command.Parse(body, appName)
 
 	switch kind {
 	case command.Help:
-		return reply(rest, command.HelpText, stdout)
+		return reply(rest, command.HelpTextFor(appName), stdout)
 	case command.Go, command.Address:
 		// A verb aimed at the wrong surface is answered, not run. This lives on
 		// the comment path rather than inside run and address because someone
@@ -292,7 +335,7 @@ func commandCmd(argv []string, stdout io.Writer) error {
 			return err
 		}
 		if a.ok && command.Misdirected(kind, a.onPR) {
-			return a.post(command.MisdirectedText(kind, a.onPR), stdout)
+			return a.post(command.MisdirectedText(kind, a.onPR, appName), stdout)
 		}
 		if kind == command.Go {
 			return runCmd(rest)
@@ -302,8 +345,8 @@ func commandCmd(argv []string, stdout io.Writer) error {
 		// Only answer a comment that was actually addressed to the agent.
 		// Anything else is someone mentioning it in passing, and replying to
 		// that would make it the noisiest participant in every thread.
-		if command.Addressed(body) {
-			return reply(rest, command.UnknownText, stdout)
+		if command.Addressed(body, appName) {
+			return reply(rest, command.UnknownTextFor(appName), stdout)
 		}
 		fmt.Fprintln(stdout, "no command recognised in that comment; nothing to do")
 		return nil
@@ -407,6 +450,29 @@ func reply(argv []string, body string, stdout io.Writer) error {
 // preflightCmd validates the repo config and engine settings, then exits. A
 // workflow runs it before installing the rest of the toolchain, so a
 // misconfigured repository finds out in seconds and the rules live in one place.
+// checkMentionAgreement fails when the configured handle and the caller
+// workflow's trigger disagree.
+//
+// The handle necessarily lives in two files: the parser reads it from config,
+// which the App can push, while the trigger has to be a literal in the workflow,
+// which the App deliberately cannot. Drift between them is silent in the worst
+// way — comments simply stop working, with no error anywhere — so it is checked
+// on every run rather than left to be discovered.
+func checkMentionAgreement(repoDir, appName string) error {
+	path := filepath.Join(repoDir, ".github", "workflows", "simplycubed.yml")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		// No caller workflow is a valid local setup, not a misconfiguration.
+		return nil
+	}
+	want := "'" + command.MentionFor(appName) + "'"
+	if strings.Contains(string(b), want) {
+		return nil
+	}
+	return fmt.Errorf("%w: .github/simplycubed.yml sets appName %q, but %s does not trigger on %s. Comment commands will never fire. Re-run \"simplycubed init --workflow\" to rewrite the trigger from the config",
+		ErrConfigMissing, appName, path, want)
+}
+
 func preflightCmd(argv []string, stdout io.Writer) error {
 	fs := flag.NewFlagSet("preflight", flag.ContinueOnError)
 	repoDir := fs.String("repo-dir", ".", "path to the target repo checkout")
@@ -419,6 +485,12 @@ func preflightCmd(argv []string, stdout io.Writer) error {
 		return fmt.Errorf("load config: %w", err)
 	}
 	if _, err := engineEnv(cfg); err != nil {
+		return err
+	}
+	if cfg.AppName == "" {
+		return fmt.Errorf("%w: .github/simplycubed.yml sets no appName. Comment commands address the App you installed, so without it none of them can fire. Add \"appName: <your-app>\" or re-run \"simplycubed init --workflow --app-name <your-app>\"", ErrConfigMissing)
+	}
+	if err := checkMentionAgreement(*repoDir, cfg.AppName); err != nil {
 		return err
 	}
 	// The App credentials are only reachable when the caller workflow exports
@@ -651,12 +723,18 @@ func initCmd(argv []string, stdout io.Writer) error {
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
 	repoDir := fs.String("repo-dir", ".", "path to the target repo checkout")
 	writeWorkflow := fs.Bool("workflow", false, "also write the Actions caller workflow")
+	appNameFlag := fs.String("app-name", "", "the GitHub App you installed, for example acme-code; comment commands address it")
 	if _, err := parseInterleaved(fs, argv); err != nil {
 		return err
 	}
 
+	appName, err := resolveAppName(*repoDir, *appNameFlag)
+	if err != nil {
+		return err
+	}
+
 	configPath := filepath.Join(*repoDir, ".github", "simplycubed.yml")
-	wroteConfig, err := writeStarterConfig(configPath)
+	wroteConfig, err := writeStarterConfig(configPath, appName)
 	if err != nil {
 		return err
 	}
@@ -665,7 +743,7 @@ func initCmd(argv []string, stdout io.Writer) error {
 	wroteWorkflow := false
 	wroteSelftest := false
 	if *writeWorkflow {
-		wroteWorkflow, err = writeStarterFile(workflowPath, renderCallerWorkflow(buildinfo.Version))
+		wroteWorkflow, err = writeStarterFile(workflowPath, renderCallerWorkflow(buildinfo.Version, appName))
 		if err != nil {
 			return err
 		}
@@ -771,8 +849,22 @@ func appCreateURL(repoDir string) (string, bool) {
 	return "https://github.com/settings/apps/new", true
 }
 
-func writeStarterConfig(path string) (bool, error) {
-	return writeStarterFile(path, starterConfig)
+func writeStarterConfig(path, appName string) (bool, error) {
+	return writeStarterFile(path, strings.ReplaceAll(starterConfig, callerWorkflowAppNameToken, appName))
+}
+
+// resolveAppName decides the handle to write into both files. An explicit
+// --app-name wins; otherwise an existing config keeps what it already says, so
+// re-running init to pick up a new release does not silently change the handle
+// a team already types.
+func resolveAppName(repoDir, flagValue string) (string, error) {
+	if v := strings.TrimSuffix(strings.TrimPrefix(strings.TrimSpace(flagValue), "@"), "[bot]"); v != "" {
+		return v, nil
+	}
+	if cfg, err := config.Load(filepath.Join(repoDir, ".github", "simplycubed.yml")); err == nil && cfg.AppName != "" {
+		return cfg.AppName, nil
+	}
+	return "", errors.New("--app-name is required: comment commands address the App you installed, and its name is unique to you. Pass the App's name without the \"[bot]\" suffix, for example --app-name acme-code")
 }
 
 func writeStarterFile(path, body string) (bool, error) {
@@ -790,8 +882,14 @@ func writeStarterFile(path, body string) (bool, error) {
 	return true, nil
 }
 
-func renderCallerWorkflow(version string) string {
-	return strings.ReplaceAll(callerWorkflowTemplate, callerWorkflowTagToken, workflowTemplateTag(version))
+// renderCallerWorkflow writes the trigger for the App this repository installed.
+// The handle cannot be a constant: App names are globally unique, so every
+// adopter's bot has its own, and the trigger has to match theirs or no comment
+// ever starts a run. It is templated here rather than matched loosely at
+// runtime so a mention of a colleague does not spin up a runner.
+func renderCallerWorkflow(version, appName string) string {
+	out := strings.ReplaceAll(callerWorkflowTemplate, callerWorkflowTagToken, workflowTemplateTag(version))
+	return strings.ReplaceAll(out, callerWorkflowAppNameToken, appName)
 }
 
 func workflowTemplateTag(version string) string {

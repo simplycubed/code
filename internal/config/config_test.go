@@ -98,3 +98,22 @@ func TestParseEngineSelection(t *testing.T) {
 		t.Fatalf("unknown engine should fall back, got %q err = %v", c.Engine, err)
 	}
 }
+
+func TestAppNameIsNormalised(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"acme-code", "acme-code"},
+		{"@acme-code", "acme-code"},
+		{"acme-code[bot]", "acme-code"},
+		{"@acme-code[bot]", "acme-code"},
+	} {
+		c, err := Parse([]byte("gate: make check\nappName: " + tc.in + "\n"))
+		if err != nil {
+			t.Fatalf("Parse(%q): %v", tc.in, err)
+		}
+		// People write the handle they type in a comment, the login they see on
+		// a commit, or the bare name. All three mean the same App.
+		if c.AppName != tc.want {
+			t.Fatalf("appName %q parsed to %q, want %q", tc.in, c.AppName, tc.want)
+		}
+	}
+}

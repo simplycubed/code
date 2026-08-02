@@ -39,6 +39,11 @@ type Config struct {
 	// Engine selects the adapter that writes the code: "codex" (default) or
 	// "claude". The loop, the roles, and the gate are identical either way.
 	Engine string
+	// AppName is the login of the GitHub App this repository installed, without
+	// the "[bot]" suffix. It is what a comment command addresses, so it differs
+	// per adopter: App names are globally unique, and every installation has its
+	// own. Empty means comment commands are not configured.
+	AppName string
 	// Review turns on the automated reviewer: after the gate passes, a
 	// read-only reviewer judges the change and its findings go to the fixer
 	// before a human ever sees the pull request. Off by default.
@@ -83,6 +88,9 @@ func Parse(b []byte) (*Config, error) {
 			case "false", "no", "off", "0":
 				c.Attribution = false
 			}
+		case "appName":
+			c.AppName = strings.TrimPrefix(strings.TrimPrefix(val, "@"), "")
+			c.AppName = strings.TrimSuffix(c.AppName, "[bot]")
 		case "engine":
 			switch strings.ToLower(val) {
 			case "codex", "claude":

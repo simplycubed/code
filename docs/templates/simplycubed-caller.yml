@@ -48,7 +48,7 @@ jobs:
     if: >-
       github.event_name == 'issue_comment' &&
       github.event.comment.user.type != 'Bot' &&
-      startsWith(github.event.comment.body, '/simplycubed') &&
+      startsWith(github.event.comment.body, '@your-app-name') &&
       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
     uses: simplycubed/code/.github/workflows/simplycubed.yml@v0.2.0
     with:

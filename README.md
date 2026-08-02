@@ -96,9 +96,19 @@ You drive the agent by applying one label and reading the pull request. The bot 
 
 You can also drive it by comment, addressed to the bot at the start of a line:
 
-- `/simplycubed go` on an issue starts work on it, the same as applying `sc:go`.
-- `/simplycubed address` on a pull request addresses the current review feedback.
-- `/simplycubed help` lists what it understands.
+Commands address **your own App**, not ours. If you installed an App called
+`acme-code`, your team types:
+
+- `@acme-code go` on an issue starts work on it, the same as applying `sc:go`.
+- `@acme-code address` on a pull request addresses the current review feedback.
+- `@acme-code help` lists what it understands.
+
+The handle is per-repository because App names are globally unique, so every
+installation has its own. It is also why GitHub offers the bot in the
+autocomplete after someone types `@`: it suggests accounts with access to the
+repository, which a fixed prefix could never be. You set it once with
+`simplycubed init --app-name`, and it is stored as `appName:` in
+`.github/simplycubed.yml`.
 
 Only comments from people with write access are acted on, and only a comment that begins with the mention counts, so quoting an earlier comment never re-triggers a run. Note that a plain pull-request comment is not a review: to run the fixer from a review, submit it through **Files changed → Review changes**.
 
