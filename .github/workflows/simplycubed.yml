@@ -100,7 +100,9 @@ jobs:
         env:
           SIMPLYCUBED_AZURE_OPENAI_ENDPOINT: ${{ inputs['azure-openai-endpoint'] }}
           SIMPLYCUBED_AZURE_OPENAI_API_KEY: ${{ secrets['azure-openai-api-key'] }}
-        run: simplycubed preflight --repo-dir .
+          SIMPLYCUBED_GH_APP_CLIENT_ID: ${{ inputs['github-app-client-id'] }}
+          SIMPLYCUBED_GH_APP_PRIVATE_KEY: ${{ secrets['github-app-private-key'] }}
+        run: simplycubed preflight --repo-dir . --actions
 
       - name: Let the engine sandbox start
         # The engine sandboxes itself with a vendored bubblewrap, and bubblewrap
@@ -188,7 +190,9 @@ jobs:
         env:
           SIMPLYCUBED_AZURE_OPENAI_ENDPOINT: ${{ inputs['azure-openai-endpoint'] }}
           SIMPLYCUBED_AZURE_OPENAI_API_KEY: ${{ secrets['azure-openai-api-key'] }}
-        run: simplycubed preflight --repo-dir .
+          SIMPLYCUBED_GH_APP_CLIENT_ID: ${{ inputs['github-app-client-id'] }}
+          SIMPLYCUBED_GH_APP_PRIVATE_KEY: ${{ secrets['github-app-private-key'] }}
+        run: simplycubed preflight --repo-dir . --actions
 
       - name: Let the engine sandbox start
         # The engine sandboxes itself with a vendored bubblewrap, and bubblewrap
