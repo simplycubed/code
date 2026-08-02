@@ -116,7 +116,7 @@ What that means for customers:
 
 Setup files are generated locally by `simplycubed init` and then merged by a human, because the runtime holds no `workflows` permission and cannot add or update workflow files on its own.
 
-The GitHub App identity is `simplycubed-code[bot]`. That bot is the single audit signal for everything the agent does.
+The GitHub App identity is your own App's `[bot]` account. That bot is the single audit signal for everything the agent does.
 
 ## Getting started
 
@@ -143,7 +143,7 @@ Then follow the [setup guide in `docs/setup.md`](docs/setup.md) to add the repos
 
 To run the loop inside your own GitHub Actions:
 
-1. Create and install the GitHub App, `simplycubed-code`.
+1. Create and install **your own** GitHub App. App names are globally unique, so it cannot be named after ours, and its private key is what mints the tokens that act on your repository.
    Repository permissions: `Contents`, `Pull requests`, and `Issues` only.
    Do not grant `Workflows`, `Administration`, `Environments`, or `Secrets`.
    That means the App cannot push changes under `.github/workflows/`: if a run needs to edit a workflow file, make that commit as a human or run the CLI locally under your own `gh` auth instead of the App token.

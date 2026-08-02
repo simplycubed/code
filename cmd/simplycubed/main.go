@@ -707,9 +707,30 @@ func initCmd(argv []string, stdout io.Writer) error {
 	} else {
 		fmt.Fprintf(stdout, "created labels: %s\n", strings.Join(created, ", "))
 	}
+	createURL, resolved := appCreateURL(*repoDir)
 	fmt.Fprintln(stdout, "next steps:")
-	fmt.Fprintln(stdout, "  - install the simplycubed-code GitHub App with contents, issues, and pull requests permissions only")
-	fmt.Fprintln(stdout, "  - disable the App webhook, set install visibility to Any account, and install it on the repo")
+	fmt.Fprintln(stdout, "  1. Create your OWN GitHub App. It has to be yours: its private key is what mints")
+	fmt.Fprintln(stdout, "     the tokens that act on your repository, so a shared key would let its holder act")
+	fmt.Fprintln(stdout, "     on every other installation. This is what keeps the agent inside your GitHub.")
+	fmt.Fprintln(stdout, "       "+createURL)
+	if !resolved {
+		fmt.Fprintln(stdout, "       (if this repository belongs to an organisation, use")
+		fmt.Fprintln(stdout, "        https://github.com/organizations/<org>/settings/apps/new instead)")
+	}
+	fmt.Fprintln(stdout, "     Name it anything you like; App names are globally unique, so you cannot reuse ours.")
+	fmt.Fprintln(stdout, "     Permissions, and nothing else:  Contents: Read and write")
+	fmt.Fprintln(stdout, "                                     Issues: Read and write")
+	fmt.Fprintln(stdout, "                                     Pull requests: Read and write")
+	fmt.Fprintln(stdout, "     Uncheck Active under Webhook. Actions triggers this runtime; an enabled webhook")
+	fmt.Fprintln(stdout, "     with nothing listening only generates failures.")
+	fmt.Fprintln(stdout, "     Set Any account under Where can this GitHub App be installed, if the App belongs")
+	fmt.Fprintln(stdout, "     to your personal account and the repository belongs to an organisation. An App")
+	fmt.Fprintln(stdout, "     restricted to its owner cannot be installed anywhere else, and this is the step")
+	fmt.Fprintln(stdout, "     most often missed.")
+	fmt.Fprintln(stdout, "  2. Generate a private key on the App settings page and keep the download. GitHub")
+	fmt.Fprintln(stdout, "     shows it once. Note the Client ID there too, the Iv23 string.")
+	fmt.Fprintln(stdout, "  3. Install the App on this repository, from Install App on the same page.")
+	fmt.Fprintln(stdout, "     Reference: https://docs.github.com/apps/creating-github-apps")
 	fmt.Fprintln(stdout, "  - write the real gate in .github/simplycubed.yml")
 	fmt.Fprintln(stdout, "  - verify that gate is green on your main branch")
 	fmt.Fprintln(stdout, "  - add two repository VARIABLES, under Settings > Secrets and variables > Actions > Variables:")
@@ -725,6 +746,29 @@ func initCmd(argv []string, stdout io.Writer) error {
 	fmt.Fprintln(stdout, "  - delete .github/workflows/simplycubed-selftest.yml once it passes")
 	fmt.Fprintln(stdout, "  - file an issue and apply the sc:go label")
 	return nil
+}
+
+// appCreateURL returns the GitHub form for creating an App, which differs by
+// account type. Best effort: init must still work when gh cannot answer, so a
+// failure returns the personal form and a note rather than an error.
+func appCreateURL(repoDir string) (string, bool) {
+	out, err := exec.Command("gh", "repo", "view", "--json", "owner", "--jq", ".owner.login").Output()
+	_ = repoDir
+	if err != nil {
+		return "https://github.com/settings/apps/new", false
+	}
+	owner := strings.TrimSpace(string(out))
+	if owner == "" {
+		return "https://github.com/settings/apps/new", false
+	}
+	kind, err := exec.Command("gh", "api", "users/"+owner, "--jq", ".type").Output()
+	if err != nil {
+		return "https://github.com/settings/apps/new", false
+	}
+	if strings.TrimSpace(string(kind)) == "Organization" {
+		return "https://github.com/organizations/" + owner + "/settings/apps/new", true
+	}
+	return "https://github.com/settings/apps/new", true
 }
 
 func writeStarterConfig(path string) (bool, error) {

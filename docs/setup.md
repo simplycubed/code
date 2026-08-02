@@ -71,24 +71,47 @@ simplycubed run owner/repo#N --repo-dir .
 4. Create and install the GitHub App identity, then add the required repository
 settings.
 
-Create the `simplycubed-code` GitHub App with `Contents`, `Issues`, and `Pull
-requests` permissions only, disable the webhook, set install visibility to `Any
-account`, and install it on the repository.
+**The App has to be your own.** Its private key is what mints the tokens that act
+on your repository, so a shared key would let whoever holds it act on every other
+installation of that App. That is why there is no App to install *from us*, and
+it is what makes "runs in your GitHub, not ours" true rather than a slogan.
 
-Then add these repository settings:
+Create it at [github.com/settings/apps/new](https://github.com/settings/apps/new),
+or at `https://github.com/organizations/<org>/settings/apps/new` if the repository
+belongs to an organisation. GitHub's own reference is
+[Creating GitHub Apps](https://docs.github.com/apps/creating-github-apps).
+
+- **Name:** anything you like. App names are globally unique, so you cannot reuse
+  ours, and your bot will be `<your-app-name>[bot]`.
+- **Permissions**, and nothing else: `Contents: Read and write`,
+  `Issues: Read and write`, `Pull requests: Read and write`.
+- **Webhook:** uncheck `Active`. Actions triggers this runtime, so an enabled
+  webhook with nothing listening only generates failures.
+- **Where can this GitHub App be installed:** `Any account`, if the App belongs to
+  your personal account and the repository belongs to an organisation. An App
+  restricted to its owner cannot be installed anywhere else. This is the step most
+  often missed.
+
+Generate a private key on the App settings page and keep the download; GitHub
+shows it once. Note the Client ID there too, the `Iv23` string. Then install the
+App on the repository from `Install App`.
+
+Then add these repository settings. **Variables and Secrets are different tabs**
+under Settings > Secrets and variables > Actions, and a value filed under the
+wrong one reads back as empty rather than failing:
 
 - Variable: `SIMPLYCUBED_GH_APP_CLIENT_ID`, the App Client ID, the `Iv23` string on the App settings page
 - Secret: `SIMPLYCUBED_GH_APP_PRIVATE_KEY`
 - Variable: `SIMPLYCUBED_AZURE_OPENAI_ENDPOINT`
 - Secret: `SIMPLYCUBED_AZURE_OPENAI_API_KEY`
 
-The Actions runtime authenticates as the `simplycubed-code` GitHub App, so the
-App ID and private key are required. Store the private key as the full PEM
-contents, including the `-----BEGIN` and `-----END` lines.
+The Actions runtime authenticates as your App, so the Client ID and private key
+are both required. Store the private key as the full PEM contents, including the
+`-----BEGIN` and `-----END` lines.
 
 Each job mints its own installation token for that repository, so the agent
-authors commits, pull requests, and comments as `simplycubed-code[bot]`, and
-its pull requests receive their own CI runs. A personal access token is not an
+authors commits, pull requests, and comments as `<your-app-name>[bot]`, and its
+pull requests receive their own CI runs. A personal access token is not an
 alternative: the reusable workflow accepts App credentials only.
 
 5. Commit the generated config and workflow files in the target repository, open
@@ -153,7 +176,7 @@ flowchart TB
         A2["repository secrets<br/>SIMPLYCUBED_AZURE_OPENAI_API_KEY<br/>SIMPLYCUBED_GH_APP_PRIVATE_KEY"]
         A3["per-job installation token<br/>contents, issues, pull requests"]
         A4["simplycubed run / address"]
-        A5["commits and PR authored by<br/>simplycubed-code[bot]"]
+        A5["commits and PR authored by<br/>your-app-name[bot]"]
         A2 --> A3
         A1 --> A4
         A2 --> A4
