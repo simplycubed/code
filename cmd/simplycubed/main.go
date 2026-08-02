@@ -133,7 +133,6 @@ gate:
 const (
 	latestKnownWorkflowTag = "v0.1.9"
 	callerWorkflowTagToken = "__SIMPLYCUBED_TAG__"
-	simplycubedAppLogin    = "simplycubed-code[bot]"
 )
 
 //go:embed simplycubed-caller.yml.tmpl
@@ -427,6 +426,15 @@ func parseInterleaved(fs *flag.FlagSet, argv []string) ([]string, error) {
 // environment, writes the codex config, and builds the dependency graph. It
 // returns the remaining positional arguments so each command can parse its own
 // reference (an issue for run, a pull request for address).
+// isBotLogin reports whether a login belongs to a GitHub App installation.
+// The Actions runtime always authenticates as an App, and that App deliberately
+// holds no workflows permission, so any bot identity is restricted. An empty
+// login means a local run under a human's own credential, which can push
+// workflow files and must not be blocked.
+func isBotLogin(login string) bool {
+	return strings.HasSuffix(login, "[bot]")
+}
+
 func prepare(name string, argv []string) (*commonFlags, []string, error) {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	repoDir := fs.String("repo-dir", ".", "path to the target repo checkout")
@@ -493,7 +501,8 @@ func prepare(name string, argv []string) (*commonFlags, []string, error) {
 		Forge:                  forgeForLoop,
 		VCS:                    vcs,
 		Worktrees:              &worktree.Manager{RepoDir: *repoDir, BaseDir: filepath.Join(*stateDir, "worktrees")},
-		WorkflowRestrictedPush: forge.Self == simplycubedAppLogin,
+		WorkflowRestrictedPush: isBotLogin(forge.Self),
+		SelfLogin:              forge.Self,
 	}
 	return &commonFlags{repoDir: *repoDir, base: *base, actor: *actor, cfg: cfg, deps: deps, dry: dryForge}, rest, nil
 }

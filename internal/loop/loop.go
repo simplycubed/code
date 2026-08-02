@@ -50,6 +50,10 @@ type Config struct {
 	// App, whose installation token deliberately lacks `workflows` permission.
 	// When such a run edits `.github/workflows/`, GitHub refuses the push.
 	WorkflowRestrictedPush bool
+
+	// SelfLogin is the authenticated identity, used to name it in an
+	// escalation. Empty when the run is a human under their own credential.
+	SelfLogin string
 	// Attribute stamps generated commits and pull requests with a SimplyCubed
 	// Code marker. The app wires this from the repo config (on by default).
 	Attribute bool
@@ -142,16 +146,20 @@ func (e *Engine) promptFor(role domain.Role, iss domain.Issue) string {
 	return iss.Body
 }
 
-func workflowPermissionReason() string {
-	return "the change touches `.github/workflows/`, but this run is authenticated as the `simplycubed-code[bot]` GitHub App, which deliberately lacks `workflows` permission. GitHub will refuse that push. Commit the workflow change as a human, or rerun the CLI under your own GitHub auth."
+func workflowPermissionReason(login string) string {
+	who := "a GitHub App"
+	if login != "" {
+		who = "the `" + login + "` GitHub App"
+	}
+	return "the change touches `.github/workflows/`, but this run is authenticated as " + who + ", which deliberately lacks `workflows` permission. GitHub will refuse that push. Commit the workflow change as a human, or rerun the CLI under your own GitHub auth."
 }
 
-func workflowPushReason(err error) string {
+func (e *Engine) workflowPushReason(err error) string {
 	if err == nil {
 		return ""
 	}
 	if strings.Contains(err.Error(), workflowPushRefusal) {
-		return workflowPermissionReason()
+		return workflowPermissionReason(e.Cfg.SelfLogin)
 	}
 	return ""
 }
@@ -171,7 +179,7 @@ func (e *Engine) workflowPreflight(ctx context.Context) (string, error) {
 	if !touched {
 		return "", nil
 	}
-	return workflowPermissionReason(), nil
+	return workflowPermissionReason(e.Cfg.SelfLogin), nil
 }
 
 // log records an event if a ledger is configured; otherwise it is a no-op.
@@ -355,7 +363,7 @@ func (e *Engine) pushFix(ctx context.Context, req FixRequest, prefix string, rou
 			return e.fixEscalate(ctx, req, prefix, round, "gate passed but the fixer made no change to push")
 		}
 		if err := e.VCS.Push(ctx, e.Cfg.WorkDir, req.Branch); err != nil {
-			if reason := workflowPushReason(err); reason != "" {
+			if reason := e.workflowPushReason(err); reason != "" {
 				return e.fixEscalate(ctx, req, prefix, round, reason)
 			}
 			return e.fixEscalate(ctx, req, prefix, round, "push failed: "+err.Error())
@@ -443,7 +451,7 @@ func (e *Engine) openPR(ctx context.Context, iss domain.Issue, prefix string, ro
 			return e.escalate(ctx, iss, prefix, round, "gate passed but the working tree has no changes to propose")
 		}
 		if err := e.VCS.Push(ctx, e.Cfg.WorkDir, e.Cfg.Branch); err != nil {
-			if reason := workflowPushReason(err); reason != "" {
+			if reason := e.workflowPushReason(err); reason != "" {
 				return e.escalate(ctx, iss, prefix, round, reason)
 			}
 			return e.escalate(ctx, iss, prefix, round, "push failed: "+err.Error())
