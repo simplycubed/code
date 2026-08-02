@@ -4,7 +4,7 @@
 
 SimplyCubed Code is an autonomous coding agent you install into your own GitHub. Your team files an issue, the agent prepares a pull request in your repository, and one of your reviewers decides whether it ships.
 
-> Beta. Current release: `v0.1.9`. Product overview: [simplycubed.com/code](https://simplycubed.com/code?utm_source=github&utm_medium=readme&utm_campaign=code). See [Status](#status).
+> Beta. Current release: `v0.2.0`. Product overview: [simplycubed.com/code](https://simplycubed.com/code?utm_source=github&utm_medium=readme&utm_campaign=code). See [Status](#status).
 
 ### Try it without letting it write anything
 
@@ -124,16 +124,14 @@ Start with [docs/setup.md](docs/setup.md). It walks through customer installatio
 
 ## Installation
 
-Install the pinned release you want to run. The current release is `v0.1.9`;
-replace `<release-tag>` below with that tag, or with whichever release you have
-validated:
+Install the pinned release you want to run:
 
 ```sh
-go install github.com/simplycubed/code/cmd/simplycubed@<release-tag>
+go install github.com/simplycubed/code/cmd/simplycubed@v0.2.0
 simplycubed version
 ```
 
-With `v0.1.9`, that prints `0.1.9`. Pre-1.0 releases follow semver with the
+With `v0.2.0`, that prints `0.2.0`. Pre-1.0 releases follow semver with the
 usual caveat: minor versions may still change behavior. Pin the tag you have
 validated rather than floating on `@latest`.
 
@@ -222,7 +220,7 @@ The first engine adapter targets the Codex CLI running against Azure OpenAI. Tod
 
 ## Status
 
-Beta, and honest about it. Two loops run end to end via the CLI on the Codex-on-Azure engine: issue to pull request, and fix-on-request (a human requests changes, the fixer addresses them and pushes back). `v0.1.9` is the latest release and you should still expect rough edges.
+Beta, and honest about it. Two loops run end to end via the CLI on the Codex-on-Azure engine: issue to pull request, and fix-on-request (a human requests changes, the fixer addresses them and pushes back). `v0.2.0` is the latest release and you should still expect rough edges.
 
 Roadmap, roughly in order:
 

@@ -23,11 +23,18 @@ fi
 
 # Every pin has to name the version being released, or `init --workflow` writes
 # a caller pointing at a different one than the CLI it came from.
+#
+# The install commands and the README banner are checked for the same reason.
+# They were prose rather than pins, so nothing caught them going stale, and
+# v0.2.0 shipped with both still telling a reader to install v0.1.9.
 fail=0
 for pin in \
   "cmd/simplycubed/main.go:latestKnownWorkflowTag = \"${version}\"" \
   "docs/templates/simplycubed-caller.yml:simplycubed.yml@${version}" \
-  ".github/workflows/simplycubed.yml:default: ${version}"
+  ".github/workflows/simplycubed.yml:default: ${version}" \
+  "README.md:Current release: \`${version}\`" \
+  "README.md:simplycubed@${version}" \
+  "docs/setup.md:simplycubed@${version}"
 do
   file="${pin%%:*}"
   needle="${pin#*:}"
