@@ -152,14 +152,14 @@ func TestCommitWithoutAnIdentityStillWorksWhenGitHasOne(t *testing.T) {
 	}
 }
 
-func TestTouchesWorkflowReportsOnlyWorkflowChanges(t *testing.T) {
+func TestWorkflowChangesReportsOnlyWorkflowChanges(t *testing.T) {
 	work := repoWithBareRemote(t)
 	g := &Git{}
 	ctx := context.Background()
 
-	touched, err := g.TouchesWorkflow(ctx, work)
-	if err != nil || touched {
-		t.Fatalf("clean repo should report no workflow changes: touched=%v err=%v", touched, err)
+	paths, err := g.WorkflowChanges(ctx, work)
+	if err != nil || len(paths) != 0 {
+		t.Fatalf("clean repo should report no workflow changes: paths=%v err=%v", paths, err)
 	}
 
 	if err := os.MkdirAll(filepath.Join(work, ".github", "workflows"), 0o755); err != nil {
@@ -168,27 +168,27 @@ func TestTouchesWorkflowReportsOnlyWorkflowChanges(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(work, ".github", "workflows", "check.yml"), []byte("name: check\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	touched, err = g.TouchesWorkflow(ctx, work)
-	if err != nil || !touched {
-		t.Fatalf("workflow edit should be reported: touched=%v err=%v", touched, err)
+	paths, err = g.WorkflowChanges(ctx, work)
+	if err != nil || len(paths) != 1 || paths[0] != ".github/workflows/check.yml" {
+		t.Fatalf("an edit must be reported by path so an escalation can name it: paths=%v err=%v", paths, err)
 	}
 
 	if _, err := g.Commit(ctx, work, "add workflow"); err != nil {
 		t.Fatalf("Commit: %v", err)
 	}
-	touched, err = g.TouchesWorkflow(ctx, work)
-	if err != nil || touched {
-		t.Fatalf("committed workflow should leave a clean tree: touched=%v err=%v", touched, err)
+	paths, err = g.WorkflowChanges(ctx, work)
+	if err != nil || len(paths) != 0 {
+		t.Fatalf("committed workflow should leave a clean tree: paths=%v err=%v", paths, err)
 	}
 
 	if err := os.WriteFile(filepath.Join(work, "plain.txt"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	touched, err = g.TouchesWorkflow(ctx, work)
+	paths, err = g.WorkflowChanges(ctx, work)
 	if err != nil {
-		t.Fatalf("TouchesWorkflow: %v", err)
+		t.Fatalf("WorkflowChanges: %v", err)
 	}
-	if touched {
+	if len(paths) > 0 {
 		t.Fatal("non-workflow edits must not trip workflow detection")
 	}
 }
@@ -215,5 +215,38 @@ func TestDryRunCommitsButDoesNotPush(t *testing.T) {
 	out := gitCmd(t, work, "ls-remote", "--heads", "origin", "sc/1")
 	if strings.TrimSpace(out) != "" {
 		t.Fatalf("a dry run must not push, but the remote has the branch: %s", out)
+	}
+}
+
+// Porcelain renders a staged rename as "R  <old> -> <new>". The destination is
+// the file that would be pushed, so that is the one an escalation should name.
+func TestWorkflowChangesReportsTheDestinationOfARename(t *testing.T) {
+	work := repoWithBareRemote(t)
+	g := &Git{}
+	ctx := context.Background()
+
+	dir := filepath.Join(work, ".github", "workflows")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "old.yml"), []byte("name: old\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := g.Commit(ctx, work, "add workflow"); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	mv := exec.Command("git", "mv", ".github/workflows/old.yml", ".github/workflows/new.yml")
+	mv.Dir = work
+	if out, err := mv.CombinedOutput(); err != nil {
+		t.Fatalf("git mv: %v: %s", err, out)
+	}
+
+	paths, err := g.WorkflowChanges(ctx, work)
+	if err != nil {
+		t.Fatalf("WorkflowChanges: %v", err)
+	}
+	if len(paths) != 1 || paths[0] != ".github/workflows/new.yml" {
+		t.Fatalf("paths = %v, want the rename destination", paths)
 	}
 }

@@ -75,9 +75,9 @@ type VCS interface {
 }
 
 type workflowToucher interface {
-	// TouchesWorkflow reports whether the working tree has changes under
+	// WorkflowChanges lists the changed paths under
 	// `.github/workflows/`.
-	TouchesWorkflow(ctx context.Context, dir string) (bool, error)
+	WorkflowChanges(ctx context.Context, dir string) ([]string, error)
 }
 
 const workflowPushRefusal = "refusing to allow a GitHub App to create or update workflow"
@@ -146,12 +146,27 @@ func (e *Engine) promptFor(role domain.Role, iss domain.Issue) string {
 	return iss.Body
 }
 
-func workflowPermissionReason(login string) string {
+func workflowPermissionReason(login string, paths []string) string {
 	who := "a GitHub App"
 	if login != "" {
 		who = "the `" + login + "` GitHub App"
 	}
-	return "the change touches `.github/workflows/`, but this run is authenticated as " + who + ", which deliberately lacks `workflows` permission. GitHub will refuse that push. Commit the workflow change as a human, or rerun the CLI under your own GitHub auth."
+	what := "the change touches `.github/workflows/`"
+	if len(paths) > 0 {
+		what = "the change touches " + quoteList(paths)
+	}
+	return what + ", but this run is authenticated as " + who + ", which deliberately lacks `workflows` permission. GitHub will refuse that push. Commit the workflow change as a human, or rerun the CLI under your own GitHub auth."
+}
+
+// quoteList renders paths for an escalation message. Naming them is the point:
+// without it a reader has only the agent's own description of what it changed,
+// which is not evidence.
+func quoteList(paths []string) string {
+	quoted := make([]string, 0, len(paths))
+	for _, p := range paths {
+		quoted = append(quoted, "`"+p+"`")
+	}
+	return strings.Join(quoted, ", ")
 }
 
 func (e *Engine) workflowPushReason(err error) string {
@@ -159,7 +174,7 @@ func (e *Engine) workflowPushReason(err error) string {
 		return ""
 	}
 	if strings.Contains(err.Error(), workflowPushRefusal) {
-		return workflowPermissionReason(e.Cfg.SelfLogin)
+		return workflowPermissionReason(e.Cfg.SelfLogin, nil)
 	}
 	return ""
 }
@@ -172,14 +187,14 @@ func (e *Engine) workflowPreflight(ctx context.Context) (string, error) {
 	if !ok {
 		return "", nil
 	}
-	touched, err := vcs.TouchesWorkflow(ctx, e.Cfg.WorkDir)
+	paths, err := vcs.WorkflowChanges(ctx, e.Cfg.WorkDir)
 	if err != nil {
 		return "", err
 	}
-	if !touched {
+	if len(paths) == 0 {
 		return "", nil
 	}
-	return workflowPermissionReason(e.Cfg.SelfLogin), nil
+	return workflowPermissionReason(e.Cfg.SelfLogin, paths), nil
 }
 
 // log records an event if a ledger is configured; otherwise it is a no-op.

@@ -115,14 +115,35 @@ func (g *Git) Push(ctx context.Context, dir, branch string) error {
 	return err
 }
 
-// TouchesWorkflow reports whether the working tree has tracked or untracked
-// changes under `.github/workflows/`.
-func (g *Git) TouchesWorkflow(ctx context.Context, dir string) (bool, error) {
-	out, err := g.run(ctx, dir, "status", "--porcelain", "--", ".github/workflows")
+// WorkflowChanges lists the tracked or untracked paths under
+// `.github/workflows/` that the working tree has changed. An empty result means
+// nothing there changed. The paths are returned rather than a bool so an
+// escalation can name the files that caused it, instead of asking the reader to
+// take the agent's word for what it edited.
+func (g *Git) WorkflowChanges(ctx context.Context, dir string) ([]string, error) {
+	// -uall lists untracked files individually. Without it git collapses a new
+	// directory to a single "?? .github/workflows/" entry, and an escalation
+	// that names a directory is barely better than one that names nothing.
+	out, err := g.run(ctx, dir, "status", "--porcelain", "-uall", "--", ".github/workflows")
 	if err != nil {
-		return false, err
+		return nil, err
 	}
-	return strings.TrimSpace(out) != "", nil
+	var paths []string
+	for _, line := range strings.Split(out, "\n") {
+		// Porcelain v1 is "XY <path>", and a rename is "R  <old> -> <new>".
+		// The destination is the file that would be pushed, so report that.
+		if len(line) < 4 {
+			continue
+		}
+		path := strings.TrimSpace(line[3:])
+		if _, dst, ok := strings.Cut(path, " -> "); ok {
+			path = dst
+		}
+		if path = strings.Trim(path, `"`); path != "" {
+			paths = append(paths, path)
+		}
+	}
+	return paths, nil
 }
 
 // Sync hard-resets dir to the remote tip of branch. It fetches the branch and
