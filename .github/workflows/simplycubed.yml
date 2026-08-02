@@ -13,12 +13,6 @@ on:
         default: ""
         required: false
         type: string
-      github-app-id:
-        description: Deprecated, kept so an existing caller keeps working. Pass
-          github-app-client-id instead.
-        default: ""
-        required: false
-        type: string
       issue-number:
         description: Issue number to run, when triggered from issues:labeled.
         default: ""
@@ -80,7 +74,7 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          client-id: ${{ inputs['github-app-client-id'] || inputs['github-app-id'] }}
+          client-id: ${{ inputs['github-app-client-id'] }}
           private-key: ${{ secrets['github-app-private-key'] }}
           owner: ${{ steps.repo.outputs.owner }}
           repositories: ${{ steps.repo.outputs.name }}
@@ -168,7 +162,7 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          client-id: ${{ inputs['github-app-client-id'] || inputs['github-app-id'] }}
+          client-id: ${{ inputs['github-app-client-id'] }}
           private-key: ${{ secrets['github-app-private-key'] }}
           owner: ${{ steps.repo.outputs.owner }}
           repositories: ${{ steps.repo.outputs.name }}
