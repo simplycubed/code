@@ -1194,3 +1194,69 @@ func TestWorkflowRestrictedPushCoversAnyBotIdentity(t *testing.T) {
 		}
 	})
 }
+
+// Two of the four adopter-set values live under Variables and two under
+// Secrets. A value filed on the wrong tab reads back empty rather than
+// erroring, so preflight has to catch it and say which tab it belongs on.
+func TestPreflightChecksTheAdopterSetValues(t *testing.T) {
+	setAll := func(t *testing.T) {
+		t.Helper()
+		t.Setenv("SIMPLYCUBED_AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
+		t.Setenv("SIMPLYCUBED_AZURE_OPENAI_API_KEY", "k")
+		t.Setenv("SIMPLYCUBED_GH_APP_CLIENT_ID", "Iv23example")
+		t.Setenv("SIMPLYCUBED_GH_APP_PRIVATE_KEY", "-----BEGIN...")
+	}
+
+	for _, tc := range []struct {
+		name, unset, wantSection string
+	}{
+		{"endpoint", "SIMPLYCUBED_AZURE_OPENAI_ENDPOINT", "repository variable"},
+		{"api key", "SIMPLYCUBED_AZURE_OPENAI_API_KEY", "repository secret"},
+		{"client id", "SIMPLYCUBED_GH_APP_CLIENT_ID", "repository variable"},
+		{"private key", "SIMPLYCUBED_GH_APP_PRIVATE_KEY", "repository secret"},
+	} {
+		t.Run(tc.name+" missing names its section", func(t *testing.T) {
+			setAll(t)
+			t.Setenv(tc.unset, "")
+			err := preflightCmd([]string{"--repo-dir", repoWithConfig(t), "--actions"}, io.Discard)
+			if err == nil {
+				t.Fatalf("%s unset must fail preflight", tc.unset)
+			}
+			if !errors.Is(err, ErrConfigMissing) {
+				t.Fatalf("err = %v, want it to classify as a configuration miss", err)
+			}
+			for _, want := range []string{tc.unset, tc.wantSection} {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("err = %q, expected it to mention %q", err, want)
+				}
+			}
+		})
+	}
+
+	t.Run("a value filed on the wrong tab looks empty and fails the same way", func(t *testing.T) {
+		setAll(t)
+		t.Setenv("SIMPLYCUBED_GH_APP_CLIENT_ID", "   ")
+		err := preflightCmd([]string{"--repo-dir", repoWithConfig(t), "--actions"}, io.Discard)
+		if !errors.Is(err, ErrConfigMissing) {
+			t.Fatalf("err = %v, want a whitespace-only value treated as unset", err)
+		}
+	})
+
+	t.Run("a local run does not require the App pair", func(t *testing.T) {
+		setAll(t)
+		t.Setenv("SIMPLYCUBED_GH_APP_CLIENT_ID", "")
+		t.Setenv("SIMPLYCUBED_GH_APP_PRIVATE_KEY", "")
+		if err := preflightCmd([]string{"--repo-dir", repoWithConfig(t)}, io.Discard); err != nil {
+			t.Fatalf("a local run authenticates as the operator and never uses the App: %v", err)
+		}
+	})
+
+	t.Run("a configuration miss exits 3, not 1", func(t *testing.T) {
+		setAll(t)
+		t.Setenv("SIMPLYCUBED_AZURE_OPENAI_API_KEY", "")
+		var out, errOut bytes.Buffer
+		if code := dispatch([]string{"preflight", "--repo-dir", repoWithConfig(t)}, &out, &errOut); code != 3 {
+			t.Fatalf("exit = %d, want 3 so a caller can tell a missing value from a bug", code)
+		}
+	})
+}

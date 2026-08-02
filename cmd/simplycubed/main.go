@@ -11,6 +11,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -52,6 +53,12 @@ func dispatch(args []string, stdout, stderr io.Writer) int {
 	}
 	fail := func(err error) int {
 		fmt.Fprintln(stderr, "error:", err)
+		// A missing adopter-set value is something to go and set, not a bug to
+		// report. Its own exit code lets a caller tell those apart without
+		// matching on message text.
+		if errors.Is(err, ErrConfigMissing) {
+			return 3
+		}
 		return 1
 	}
 	switch args[0] {
@@ -149,10 +156,10 @@ func engineEnv(cfg *config.Config) (string, error) {
 	if cfg != nil && cfg.Engine == "claude" {
 		return "", nil
 	}
-	endpoint := strings.TrimRight(os.Getenv("SIMPLYCUBED_AZURE_OPENAI_ENDPOINT"), "/")
-	if endpoint == "" {
-		return "", fmt.Errorf("SIMPLYCUBED_AZURE_OPENAI_ENDPOINT is not set. It is a repository variable on your own repository; a reusable workflow never inherits variables from SimplyCubed")
+	if err := requireSet("SIMPLYCUBED_AZURE_OPENAI_ENDPOINT", sectionVariable); err != nil {
+		return "", err
 	}
+	endpoint := strings.TrimRight(os.Getenv("SIMPLYCUBED_AZURE_OPENAI_ENDPOINT"), "/")
 	u, err := url.Parse(endpoint)
 	if err != nil {
 		return "", fmt.Errorf("SIMPLYCUBED_AZURE_OPENAI_ENDPOINT is not a valid URL: %w", err)
@@ -160,8 +167,8 @@ func engineEnv(cfg *config.Config) (string, error) {
 	if u.Scheme != "https" || u.Host == "" {
 		return "", fmt.Errorf("SIMPLYCUBED_AZURE_OPENAI_ENDPOINT must be an https URL like https://<resource>.openai.azure.com, got %q", endpoint)
 	}
-	if os.Getenv("SIMPLYCUBED_AZURE_OPENAI_API_KEY") == "" {
-		return "", fmt.Errorf("SIMPLYCUBED_AZURE_OPENAI_API_KEY is not set. It is a repository secret on your own repository; a reusable workflow never inherits secrets from SimplyCubed")
+	if err := requireSet("SIMPLYCUBED_AZURE_OPENAI_API_KEY", sectionSecret); err != nil {
+		return "", err
 	}
 	return endpoint, nil
 }
@@ -171,6 +178,33 @@ func engineEnv(cfg *config.Config) (string, error) {
 // identity unknown" after the change is already made and the gate has passed.
 // The identity is the credential's own login, so commits are attributable to
 // whoever the run authenticated as.
+// ErrConfigMissing marks a missing adopter-set value, as opposed to an internal
+// failure. The two want different responses: one is something to go and set,
+// the other is a bug. dispatch turns this into its own exit code so a caller
+// can tell them apart without parsing text.
+var ErrConfigMissing = errors.New("configuration missing")
+
+// section is where a value lives in the adopter's repository settings. GitHub
+// puts Variables and Secrets on different tabs, and a value filed under the
+// wrong one reads back as empty rather than failing, so every message about a
+// missing value has to say which tab it belongs on.
+type section string
+
+const (
+	sectionVariable section = "variable"
+	sectionSecret   section = "secret"
+)
+
+// requireSet returns an error naming the value and its section when unset or
+// empty. Empty matters as much as unset: an empty string is exactly what a
+// value filed under the wrong tab looks like from here.
+func requireSet(name string, where section) error {
+	if strings.TrimSpace(os.Getenv(name)) != "" {
+		return nil
+	}
+	return fmt.Errorf("%w: %s is not set. It is a repository %s on your own repository, under Settings > Secrets and variables > Actions; a reusable workflow never inherits %ss from SimplyCubed", ErrConfigMissing, name, where, where)
+}
+
 func newVCS(self string) *vcsgit.Git {
 	if self == "" {
 		return &vcsgit.Git{}
@@ -376,6 +410,7 @@ func reply(argv []string, body string, stdout io.Writer) error {
 func preflightCmd(argv []string, stdout io.Writer) error {
 	fs := flag.NewFlagSet("preflight", flag.ContinueOnError)
 	repoDir := fs.String("repo-dir", ".", "path to the target repo checkout")
+	actions := fs.Bool("actions", false, "also check the values only a caller workflow supplies")
 	if _, err := parseInterleaved(fs, argv); err != nil {
 		return err
 	}
@@ -385,6 +420,22 @@ func preflightCmd(argv []string, stdout io.Writer) error {
 	}
 	if _, err := engineEnv(cfg); err != nil {
 		return err
+	}
+	// The App credentials are only reachable when the caller workflow exports
+	// them. A local run authenticates as the operator and never uses them, so
+	// checking them there would fail a working setup.
+	if *actions {
+		for _, v := range []struct {
+			name  string
+			where section
+		}{
+			{"SIMPLYCUBED_GH_APP_CLIENT_ID", sectionVariable},
+			{"SIMPLYCUBED_GH_APP_PRIVATE_KEY", sectionSecret},
+		} {
+			if err := requireSet(v.name, v.where); err != nil {
+				return err
+			}
+		}
 	}
 	fmt.Fprintln(stdout, "preflight ok: config and engine settings are present")
 	return nil

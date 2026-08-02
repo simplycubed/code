@@ -258,6 +258,21 @@ That validates the repository config and the engine settings and exits. It is
 what the workflow runs before installing the rest of the toolchain, so a
 misconfigured repository finds out in seconds.
 
+It names the section a missing value belongs in, because Variables and Secrets
+are different tabs and a value filed under the wrong one reads back as empty
+rather than failing:
+
+```text
+error: configuration missing: SIMPLYCUBED_AZURE_OPENAI_ENDPOINT is not set. It is a
+repository variable on your own repository, under Settings > Secrets and variables >
+Actions; a reusable workflow never inherits variables from SimplyCubed
+```
+
+A missing value exits **3**, so a caller can tell "go and set this" apart from a
+bug without matching on message text. In Actions the workflow passes `--actions`,
+which also checks the App credentials; a local run authenticates as you and never
+uses them.
+
 ```sh
 simplycubed run owner/repo#N --dry-run
 ```
