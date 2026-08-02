@@ -88,7 +88,7 @@ exit 0
 	t.Setenv("PATH", stubDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	var out bytes.Buffer
-	if err := initCmd([]string{"--repo-dir", repoDir}, &out); err != nil {
+	if err := initCmd([]string{"--repo-dir", repoDir, "--app-name", "acme-code"}, &out); err != nil {
 		t.Fatalf("initCmd: %v", err)
 	}
 
@@ -192,7 +192,7 @@ exit 0
 	t.Setenv("PATH", stubDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	var out bytes.Buffer
-	if err := initCmd([]string{"--repo-dir", repoDir}, &out); err != nil {
+	if err := initCmd([]string{"--repo-dir", repoDir, "--app-name", "acme-code"}, &out); err != nil {
 		t.Fatalf("initCmd: %v", err)
 	}
 
@@ -246,7 +246,7 @@ exit 0
 	buildVersionForTest(t, "0.1.0")
 
 	var out bytes.Buffer
-	if err := initCmd([]string{"--repo-dir", repoDir, "--workflow"}, &out); err != nil {
+	if err := initCmd([]string{"--repo-dir", repoDir, "--workflow", "--app-name", "acme-code"}, &out); err != nil {
 		t.Fatalf("initCmd: %v", err)
 	}
 
@@ -310,7 +310,7 @@ exit 0
 	t.Setenv("PATH", stubDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	var out bytes.Buffer
-	if err := initCmd([]string{"--repo-dir", repoDir}, &out); err != nil {
+	if err := initCmd([]string{"--repo-dir", repoDir, "--app-name", "acme-code"}, &out); err != nil {
 		t.Fatalf("initCmd: %v", err)
 	}
 
@@ -359,7 +359,7 @@ exit 0
 	t.Setenv("PATH", stubDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	var out bytes.Buffer
-	if err := initCmd([]string{"--repo-dir", repoDir, "--workflow"}, &out); err != nil {
+	if err := initCmd([]string{"--repo-dir", repoDir, "--workflow", "--app-name", "acme-code"}, &out); err != nil {
 		t.Fatalf("initCmd: %v", err)
 	}
 
@@ -407,9 +407,10 @@ func TestCallerWorkflowTemplateMatchesDocsTemplate(t *testing.T) {
 		t.Fatalf("read docs template: %v", err)
 	}
 
-	// Render at the latest known tag: the docs template pins the current
-	// release, so a release bump that misses either copy fails here.
-	got := []byte(renderCallerWorkflow(latestKnownWorkflowTag))
+	// Render at the latest known tag with the sample handle the docs template
+	// shows: a release bump or a trigger change that misses either copy fails
+	// here.
+	got := []byte(renderCallerWorkflow(latestKnownWorkflowTag, "your-app-name"))
 	if !bytes.Equal(got, want) {
 		t.Fatalf("rendered embedded template does not match docs template\nrendered:\n%s\n\ndocs:\n%s", got, want)
 	}
@@ -466,7 +467,7 @@ func TestPreflightCmd(t *testing.T) {
 		t.Setenv("SIMPLYCUBED_AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
 		t.Setenv("SIMPLYCUBED_AZURE_OPENAI_API_KEY", "k")
 		var out bytes.Buffer
-		if err := preflightCmd([]string{"--repo-dir", repoWithConfigBody(t, "gate: make check\n")}, &out); err != nil {
+		if err := preflightCmd([]string{"--repo-dir", repoWithConfigBody(t, "gate: make check\nappName: acme-code\n")}, &out); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if !strings.Contains(out.String(), "preflight ok") {
@@ -478,7 +479,7 @@ func TestPreflightCmd(t *testing.T) {
 		t.Setenv("SIMPLYCUBED_AZURE_OPENAI_ENDPOINT", "")
 		t.Setenv("SIMPLYCUBED_AZURE_OPENAI_API_KEY", "")
 		var out bytes.Buffer
-		if err := preflightCmd([]string{"--repo-dir", repoWithConfigBody(t, "gate: make check\nengine: claude\n")}, &out); err != nil {
+		if err := preflightCmd([]string{"--repo-dir", repoWithConfigBody(t, "gate: make check\nengine: claude\nappName: acme-code\n")}, &out); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if !strings.Contains(out.String(), "preflight ok") {
@@ -500,7 +501,7 @@ func TestPreflightCmd(t *testing.T) {
 	t.Run("names the missing endpoint", func(t *testing.T) {
 		t.Setenv("SIMPLYCUBED_AZURE_OPENAI_ENDPOINT", "")
 		t.Setenv("SIMPLYCUBED_AZURE_OPENAI_API_KEY", "k")
-		err := preflightCmd([]string{"--repo-dir", repoWithConfigBody(t, "gate: make check\n")}, io.Discard)
+		err := preflightCmd([]string{"--repo-dir", repoWithConfigBody(t, "gate: make check\nappName: acme-code\n")}, io.Discard)
 		if err == nil || !strings.Contains(err.Error(), "SIMPLYCUBED_AZURE_OPENAI_ENDPOINT") {
 			t.Fatalf("err = %v, want the endpoint named", err)
 		}
@@ -525,11 +526,13 @@ func TestEngineEnvRejectsAnUnparseableEndpoint(t *testing.T) {
 
 func TestDispatchRoutesCommand(t *testing.T) {
 	var out, errOut bytes.Buffer
-	// help is the one command that needs nothing else configured.
-	if code := dispatch([]string{"command", "--body", "/simplycubed help"}, &out, &errOut); code != 0 {
-		t.Fatalf("exit = %d, want 0", code)
+	// help is the one command that needs nothing else configured, but it still
+	// needs to know which App this repository answers as.
+	repo := repoWithConfig(t)
+	if code := dispatch([]string{"command", "--body", "@acme-code help", "--repo-dir", repo}, &out, &errOut); code != 0 {
+		t.Fatalf("exit = %d, want 0: %s", code, errOut.String())
 	}
-	if !strings.Contains(out.String(), "/simplycubed go") {
+	if !strings.Contains(out.String(), "@acme-code go") {
 		t.Fatalf("stdout = %q, want the help text", out.String())
 	}
 }
@@ -599,7 +602,7 @@ func TestDispatch(t *testing.T) {
 
 func repoWithConfig(t *testing.T) string {
 	t.Helper()
-	return repoWithConfigBody(t, "gate: make check\nlabelPrefix: sc\n")
+	return repoWithConfigBody(t, "gate: make check\nlabelPrefix: sc\nappName: acme-code\n")
 }
 
 func repoWithConfigBody(t *testing.T, body string) string {
@@ -658,7 +661,7 @@ func TestPrepare(t *testing.T) {
 		t.Setenv("SIMPLYCUBED_AZURE_OPENAI_ENDPOINT", "")
 		t.Setenv("SIMPLYCUBED_AZURE_OPENAI_API_KEY", "")
 		stateDir := t.TempDir()
-		c, _, err := prepare("run", []string{"--repo-dir", repoWithConfigBody(t, "gate: make check\nengine: claude\n"), "--state-dir", stateDir})
+		c, _, err := prepare("run", []string{"--repo-dir", repoWithConfigBody(t, "gate: make check\nengine: claude\nappName: acme-code\n"), "--state-dir", stateDir})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -715,14 +718,14 @@ func TestCommandCmdRoutesByCommentBody(t *testing.T) {
 		f := stubCommentForge(t, nil)
 		var out bytes.Buffer
 		defer func() {
-			if len(f.Comments) != 1 || !strings.Contains(f.Comments[0], "/simplycubed go") {
+			if len(f.Comments) != 1 || !strings.Contains(f.Comments[0], "@acme-code go") {
 				t.Fatalf("help must be answered on the thread, posted: %v", f.Comments)
 			}
 		}()
-		if err := commandCmd([]string{"--body", "/simplycubed help", "o/r#1"}, &out); err != nil {
+		if err := commandCmd([]string{"--body", "@acme-code help", "o/r#1", "--repo-dir", repoWithConfig(t)}, &out); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if !strings.Contains(out.String(), "/simplycubed go") {
+		if !strings.Contains(out.String(), "@acme-code go") {
 			t.Fatalf("help should list the commands, got: %q", out.String())
 		}
 	})
@@ -731,7 +734,7 @@ func TestCommandCmdRoutesByCommentBody(t *testing.T) {
 	// that fires whenever anyone mentions the bot in passing.
 	t.Run("an unrecognised comment does nothing", func(t *testing.T) {
 		var out bytes.Buffer
-		if err := commandCmd([]string{"--body", "thanks /simplycubed", "o/r#1"}, &out); err != nil {
+		if err := commandCmd([]string{"--body", "thanks @acme-code", "o/r#1", "--repo-dir", repoWithConfig(t)}, &out); err != nil {
 			t.Fatalf("an unrecognised comment must not be an error: %v", err)
 		}
 		if !strings.Contains(out.String(), "nothing to do") {
@@ -805,7 +808,7 @@ func TestInitWithWorkflowIsIdempotent(t *testing.T) {
 	t.Setenv("PATH", stubDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	var first bytes.Buffer
-	if err := initCmd([]string{"--repo-dir", repoDir, "--workflow"}, &first); err != nil {
+	if err := initCmd([]string{"--repo-dir", repoDir, "--workflow", "--app-name", "acme-code"}, &first); err != nil {
 		t.Fatalf("first init: %v", err)
 	}
 	selftest := filepath.Join(repoDir, ".github", "workflows", "simplycubed-selftest.yml")
@@ -814,7 +817,7 @@ func TestInitWithWorkflowIsIdempotent(t *testing.T) {
 	}
 
 	var second bytes.Buffer
-	if err := initCmd([]string{"--repo-dir", repoDir, "--workflow"}, &second); err != nil {
+	if err := initCmd([]string{"--repo-dir", repoDir, "--workflow", "--app-name", "acme-code"}, &second); err != nil {
 		t.Fatalf("second init: %v", err)
 	}
 	if !strings.Contains(second.String(), "left existing "+selftest+" unchanged") {
@@ -835,12 +838,12 @@ func TestTakeBody(t *testing.T) {
 		wantRest []string
 	}{
 		"separate value": {
-			[]string{"--body", "/simplycubed go", "--actor", "me", "o/r#1"},
-			"/simplycubed go", []string{"--actor", "me", "o/r#1"},
+			[]string{"--body", "@acme-code go", "--actor", "me", "o/r#1"},
+			"@acme-code go", []string{"--actor", "me", "o/r#1"},
 		},
 		"equals form": {
-			[]string{"--body=/simplycubed address", "--dry-run", "o/r#2"},
-			"/simplycubed address", []string{"--dry-run", "o/r#2"},
+			[]string{"--body=@acme-code address", "--dry-run", "o/r#2"},
+			"@acme-code address", []string{"--dry-run", "o/r#2"},
 		},
 		"absent": {
 			[]string{"--actor", "me", "o/r#1"}, "", []string{"--actor", "me", "o/r#1"},
@@ -883,19 +886,19 @@ func TestCommandCmdDoesNotRunOnUnrecognisedComments(t *testing.T) {
 	// because it once started the work it was asking not to do.
 	t.Run("addressed but unrecognised gets an answer", func(t *testing.T) {
 		for _, body := range []string{
-			"/simplycubed please do not do this one",
-			"/simplycubed",
+			"@acme-code please do not do this one",
+			"@acme-code",
 		} {
 			f := stubCommentForge(t, nil)
 			var out bytes.Buffer
-			err := commandCmd([]string{"--body", body, "--repo-dir", t.TempDir(), "o/r#1"}, &out)
+			err := commandCmd([]string{"--body", body, "--repo-dir", repoWithConfig(t), "o/r#1"}, &out)
 			if err != nil {
 				t.Fatalf("%q should not be an error, got: %v", body, err)
 			}
 			if len(f.Comments) != 1 {
 				t.Fatalf("%q should be answered on the thread, posted: %v", body, f.Comments)
 			}
-			if !strings.Contains(f.Comments[0], "/simplycubed go") {
+			if !strings.Contains(f.Comments[0], "@acme-code go") {
 				t.Fatalf("%q: the answer should name the vocabulary, got: %q", body, f.Comments[0])
 			}
 		}
@@ -906,7 +909,7 @@ func TestCommandCmdDoesNotRunOnUnrecognisedComments(t *testing.T) {
 	t.Run("a passing mention stays silent", func(t *testing.T) {
 		f := stubCommentForge(t, nil)
 		var out bytes.Buffer
-		err := commandCmd([]string{"--body", "thanks /simplycubed go", "--repo-dir", t.TempDir(), "o/r#1"}, &out)
+		err := commandCmd([]string{"--body", "thanks @acme-code go", "--repo-dir", repoWithConfig(t), "o/r#1"}, &out)
 		if err != nil {
 			t.Fatalf("should be a quiet no-op, got: %v", err)
 		}
@@ -927,13 +930,13 @@ func TestCommandCmdAnswersAVerbAimedAtTheWrongSurface(t *testing.T) {
 	t.Run("address on an issue names go", func(t *testing.T) {
 		f := stubCommentForge(t, nil) // #1 is an issue
 		var out bytes.Buffer
-		if err := commandCmd([]string{"--body", "/simplycubed address this issue.", "--repo-dir", t.TempDir(), "o/r#1"}, &out); err != nil {
+		if err := commandCmd([]string{"--body", "@acme-code address this issue.", "--repo-dir", repoWithConfig(t), "o/r#1"}, &out); err != nil {
 			t.Fatalf("a wrong verb must not fail the run: %v", err)
 		}
 		if len(f.Comments) != 1 {
 			t.Fatalf("should have answered on the issue, posted: %v", f.Comments)
 		}
-		if !strings.Contains(f.Comments[0], "/simplycubed go") {
+		if !strings.Contains(f.Comments[0], "@acme-code go") {
 			t.Fatalf("the answer must name the verb that applies, got: %q", f.Comments[0])
 		}
 	})
@@ -941,13 +944,13 @@ func TestCommandCmdAnswersAVerbAimedAtTheWrongSurface(t *testing.T) {
 	t.Run("go on a pull request names address", func(t *testing.T) {
 		f := stubCommentForge(t, map[int]bool{7: true})
 		var out bytes.Buffer
-		if err := commandCmd([]string{"--body", "/simplycubed go", "--repo-dir", t.TempDir(), "o/r#7"}, &out); err != nil {
+		if err := commandCmd([]string{"--body", "@acme-code go", "--repo-dir", repoWithConfig(t), "o/r#7"}, &out); err != nil {
 			t.Fatalf("a wrong verb must not fail the run: %v", err)
 		}
 		if len(f.PRComments) != 1 {
 			t.Fatalf("should have answered on the pull request, posted: %v", f.PRComments)
 		}
-		if !strings.Contains(f.PRComments[0], "/simplycubed address") {
+		if !strings.Contains(f.PRComments[0], "@acme-code address") {
 			t.Fatalf("the answer must name the verb that applies, got: %q", f.PRComments[0])
 		}
 	})
@@ -956,7 +959,7 @@ func TestCommandCmdAnswersAVerbAimedAtTheWrongSurface(t *testing.T) {
 	t.Run("a dry run records the answer instead of posting it", func(t *testing.T) {
 		f := stubCommentForge(t, nil)
 		var out bytes.Buffer
-		if err := commandCmd([]string{"--body", "/simplycubed address", "--dry-run", "--repo-dir", t.TempDir(), "o/r#1"}, &out); err != nil {
+		if err := commandCmd([]string{"--body", "@acme-code address", "--dry-run", "--repo-dir", repoWithConfig(t), "o/r#1"}, &out); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if len(f.Comments) != 0 {
@@ -977,8 +980,8 @@ func TestCommandCmdRoutesRecognisedVerbsToTheirLoops(t *testing.T) {
 	t.Setenv("SIMPLYCUBED_AZURE_OPENAI_API_KEY", "k")
 
 	for name, body := range map[string]string{
-		"go routes to run":          "/simplycubed go",
-		"address routes to address": "/simplycubed address",
+		"go routes to run":          "@acme-code go",
+		"address routes to address": "@acme-code address",
 	} {
 		// #1 is an issue and #7 a pull request, so each verb is aimed at the
 		// surface it applies to and reaches its loop rather than being answered.
@@ -988,12 +991,16 @@ func TestCommandCmdRoutesRecognisedVerbsToTheirLoops(t *testing.T) {
 		}
 		stubCommentForge(t, map[int]bool{7: true})
 		var out bytes.Buffer
-		err := commandCmd([]string{"--body", body, "--repo-dir", t.TempDir(), ref}, &out)
+		err := commandCmd([]string{"--body", body, "--repo-dir", repoWithConfig(t), ref}, &out)
 		if err == nil {
-			t.Fatalf("%s: expected the loop to be reached and fail on the missing config", name)
+			t.Fatalf("%s: expected the loop to be reached and fail against the stub forge", name)
 		}
-		if !strings.Contains(err.Error(), "load config") {
-			t.Fatalf("%s: err = %v, want a config error proving the loop was reached", name, err)
+		// Reaching the forge is the proof: parsing resolved the verb, the config
+		// named the App, and the run got far enough to ask GitHub for something.
+		// Each verb makes a different first call, so both are named rather than
+		// pinning whichever one this test happens to hit.
+		if !strings.Contains(err.Error(), "fetch issue") && !strings.Contains(err.Error(), "read feedback") {
+			t.Fatalf("%s: err = %v, want a forge error proving the loop was reached", name, err)
 		}
 		if strings.Contains(out.String(), "nothing to do") {
 			t.Fatalf("%s: a recognised verb must not be treated as a no-op", name)
@@ -1002,7 +1009,7 @@ func TestCommandCmdRoutesRecognisedVerbsToTheirLoops(t *testing.T) {
 }
 
 func TestCommandCmdRejectsABodyFlagWithNoValue(t *testing.T) {
-	if err := commandCmd([]string{"--body"}, io.Discard); err == nil {
+	if err := commandCmd([]string{"--body", "--repo-dir", repoWithConfig(t)}, io.Discard); err == nil {
 		t.Fatal("expected an error for --body with no value")
 	}
 }
@@ -1124,13 +1131,13 @@ func TestAnswerPathEdges(t *testing.T) {
 	t.Run("no ref means echo only", func(t *testing.T) {
 		f := stubCommentForge(t, nil)
 		var out bytes.Buffer
-		if err := commandCmd([]string{"--body", "/simplycubed help"}, &out); err != nil {
+		if err := commandCmd([]string{"--body", "@acme-code help", "--repo-dir", repoWithConfig(t)}, &out); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if len(f.Comments) != 0 {
 			t.Fatalf("nothing to post to, posted: %v", f.Comments)
 		}
-		if !strings.Contains(out.String(), "/simplycubed go") {
+		if !strings.Contains(out.String(), "@acme-code go") {
 			t.Fatalf("the answer should still reach stdout, got %q", out.String())
 		}
 	})
@@ -1144,7 +1151,7 @@ func TestAnswerPathEdges(t *testing.T) {
 		}
 		t.Cleanup(func() { newCommentForge = prev })
 		var out bytes.Buffer
-		err := commandCmd([]string{"--body", "/simplycubed address", "o/r#1"}, &out)
+		err := commandCmd([]string{"--body", "@acme-code address", "o/r#1", "--repo-dir", repoWithConfig(t)}, &out)
 		if err == nil {
 			t.Fatal("want an error when the surface cannot be resolved")
 		}
@@ -1153,7 +1160,7 @@ func TestAnswerPathEdges(t *testing.T) {
 		}
 		// The same must hold on the reply path, which help and an unrecognised
 		// comment both take.
-		if err := commandCmd([]string{"--body", "/simplycubed help", "o/r#1"}, &out); err == nil {
+		if err := commandCmd([]string{"--body", "@acme-code help", "o/r#1", "--repo-dir", repoWithConfig(t)}, &out); err == nil {
 			t.Fatal("want an error on the reply path too")
 		}
 	})
@@ -1162,7 +1169,7 @@ func TestAnswerPathEdges(t *testing.T) {
 		t.Setenv("SIMPLYCUBED_DRY_RUN", "1")
 		f := stubCommentForge(t, nil)
 		var out bytes.Buffer
-		if err := commandCmd([]string{"--body", "/simplycubed address", "o/r#1"}, &out); err != nil {
+		if err := commandCmd([]string{"--body", "@acme-code address", "o/r#1", "--repo-dir", repoWithConfig(t)}, &out); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if len(f.Comments) != 0 {
@@ -1270,4 +1277,143 @@ func TestPreflightChecksTheAdopterSetValues(t *testing.T) {
 			t.Fatalf("exit = %d, want 3 so a caller can tell a missing value from a bug", code)
 		}
 	})
+}
+
+// The handle necessarily lives in two files: config, which the App can push,
+// and the workflow trigger, which it deliberately cannot. Drift between them is
+// silent in the worst way, so preflight has to catch it.
+func TestPreflightCatchesHandleDrift(t *testing.T) {
+	repoWith := func(t *testing.T, appName, trigger string) string {
+		t.Helper()
+		dir := repoWithConfigBody(t, "gate: make check\nappName: "+appName+"\n")
+		wf := filepath.Join(dir, ".github", "workflows", "simplycubed.yml")
+		if err := os.MkdirAll(filepath.Dir(wf), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		body := "on: [issue_comment]\njobs:\n  comment:\n    if: startsWith(github.event.comment.body, '" + trigger + "')\n"
+		if err := os.WriteFile(wf, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return dir
+	}
+	setAzure := func(t *testing.T) {
+		t.Helper()
+		t.Setenv("SIMPLYCUBED_AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
+		t.Setenv("SIMPLYCUBED_AZURE_OPENAI_API_KEY", "k")
+	}
+
+	t.Run("agreeing is fine", func(t *testing.T) {
+		setAzure(t)
+		if err := preflightCmd([]string{"--repo-dir", repoWith(t, "acme-code", "@acme-code")}, io.Discard); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("disagreeing names both and says how to fix it", func(t *testing.T) {
+		setAzure(t)
+		err := preflightCmd([]string{"--repo-dir", repoWith(t, "acme-code", "@old-name")}, io.Discard)
+		if !errors.Is(err, ErrConfigMissing) {
+			t.Fatalf("err = %v, want a configuration miss", err)
+		}
+		for _, want := range []string{"acme-code", "init --workflow"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Fatalf("err = %q, expected it to mention %q", err, want)
+			}
+		}
+	})
+
+	t.Run("no appName at all is refused", func(t *testing.T) {
+		setAzure(t)
+		err := preflightCmd([]string{"--repo-dir", repoWithConfigBody(t, "gate: make check\n")}, io.Discard)
+		if !errors.Is(err, ErrConfigMissing) {
+			t.Fatalf("err = %v, want a configuration miss", err)
+		}
+	})
+
+	t.Run("a local run with no caller workflow is fine", func(t *testing.T) {
+		setAzure(t)
+		if err := preflightCmd([]string{"--repo-dir", repoWithConfig(t)}, io.Discard); err != nil {
+			t.Fatalf("no caller workflow is a valid local setup: %v", err)
+		}
+	})
+}
+
+// resolveAppName decides what handle init writes into both files, so each way
+// it can be reached matters: an explicit flag, an existing config, or neither.
+func TestResolveAppName(t *testing.T) {
+	t.Run("the flag wins and is normalised", func(t *testing.T) {
+		for _, in := range []string{"acme-code", "@acme-code", "acme-code[bot]", "@acme-code[bot]", "  acme-code  "} {
+			got, err := resolveAppName(t.TempDir(), in)
+			if err != nil || got != "acme-code" {
+				t.Fatalf("resolveAppName(%q) = %q, %v; want acme-code", in, got, err)
+			}
+		}
+	})
+
+	t.Run("an existing config keeps the handle a team already types", func(t *testing.T) {
+		// Re-running init to pick up a new release must not silently change the
+		// handle, or every comment in the repository stops working.
+		got, err := resolveAppName(repoWithConfig(t), "")
+		if err != nil || got != "acme-code" {
+			t.Fatalf("got %q, %v; want the configured handle", got, err)
+		}
+	})
+
+	t.Run("the flag overrides an existing config", func(t *testing.T) {
+		got, err := resolveAppName(repoWithConfig(t), "renamed-code")
+		if err != nil || got != "renamed-code" {
+			t.Fatalf("got %q, %v; want the flag to win", got, err)
+		}
+	})
+
+	t.Run("neither is an error that explains why", func(t *testing.T) {
+		_, err := resolveAppName(t.TempDir(), "")
+		if err == nil {
+			t.Fatal("a first install with no handle must be refused, not guessed")
+		}
+		// Guessing would answer as the wrong bot, so the message has to say the
+		// name is the adopter's rather than just demanding a flag.
+		for _, want := range []string{"--app-name", "unique to you"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Fatalf("err = %q, expected it to mention %q", err, want)
+			}
+		}
+	})
+}
+
+// appNameFor parses --repo-dir out of flags it does not otherwise own, so both
+// spellings have to work or a command reads the wrong repository's config.
+func TestAppNameForReadsRepoDirInEitherForm(t *testing.T) {
+	repo := repoWithConfig(t)
+	for _, argv := range [][]string{
+		{"--repo-dir", repo, "o/r#1"},
+		{"--repo-dir=" + repo, "o/r#1"},
+		{"-repo-dir", repo},
+		{"-repo-dir=" + repo},
+	} {
+		got, err := appNameFor(argv)
+		if err != nil || got != "acme-code" {
+			t.Fatalf("appNameFor(%v) = %q, %v; want acme-code", argv, got, err)
+		}
+	}
+
+	if _, err := appNameFor([]string{"--repo-dir", t.TempDir()}); err == nil {
+		t.Fatal("a repository with no config must fail rather than parse nothing silently")
+	}
+}
+
+// commandCmd has to read the config before it can parse anything, so a
+// repository with no config fails there rather than silently parsing no
+// command and looking like a comment the agent chose to ignore.
+func TestCommandCmdSurfacesConfigProblems(t *testing.T) {
+	var out bytes.Buffer
+	err := commandCmd([]string{"--body", "@acme-code go", "--repo-dir", t.TempDir(), "o/r#1"}, &out)
+	if err == nil || !strings.Contains(err.Error(), "load config") {
+		t.Fatalf("err = %v, want a config error rather than a quiet no-op", err)
+	}
+
+	// A malformed --body is rejected before the config is ever read.
+	if err := commandCmd([]string{"--body"}, &out); err == nil {
+		t.Fatal("--body with no value must be an error")
+	}
 }

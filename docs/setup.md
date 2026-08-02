@@ -35,8 +35,18 @@ With `v0.2.0`, `simplycubed version` prints `0.2.0`.
 2. In the target repository, generate the setup files and labels:
 
 ```sh
-simplycubed init --workflow
+simplycubed init --workflow --app-name <your-app>
 ```
+
+`--app-name` is the GitHub App you created in step 4, without the `[bot]`
+suffix. **It is required, and it is yours, not ours.** App names are globally
+unique, so every installation has a different one, and it is what your team
+types to talk to the agent: `@<your-app> go` on an issue starts work.
+
+Addressing your real App is also what makes GitHub help: it offers accounts with
+access to the repository in the autocomplete, so someone types `@a` and is
+offered your bot without having to know its name. A fixed prefix could never do
+that, which is why the handle is per-repository rather than a constant.
 
 That creates the `sc:*` labels through your local `gh` session and writes three
 files into your repository:
@@ -48,11 +58,30 @@ files into your repository:
 These are local file changes in your repository. Nothing is merged or installed
 remotely for you.
 
+### The handle lives in two files, and they must agree
+
+`init` writes your App name into both:
+
+- **`.github/simplycubed.yml`** as `appName:`. This is the source of truth. The
+  agent reads it to decide what a command looks like, and it is a file the App
+  can push, so the agent can maintain it.
+- **`.github/workflows/simplycubed.yml`** as the comment trigger. It has to be a
+  literal there, because a workflow decides whether to start *before* any code
+  runs. Matching loosely instead would spin up a runner every time someone
+  mentions a colleague.
+
+The App deliberately holds no `workflows` permission, so it cannot change the
+second one. **If you rename your App, change `appName:` and re-run
+`simplycubed init --workflow` to rewrite the trigger.** `simplycubed preflight`
+fails when the two disagree, because the alternative is silent: comments would
+simply stop working, with no error anywhere.
+
 3. Edit `.github/simplycubed.yml` and set a real gate that is already green on
 your default branch. A minimal customer setup looks like this:
 
 ```yaml
 labelPrefix: sc
+appName: <your-app>
 gate: make check
 ```
 
