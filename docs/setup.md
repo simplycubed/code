@@ -22,16 +22,15 @@ You need:
 
 ## Install and configure
 
-1. Install the CLI. The current release is `v0.1.9`; replace
-   `<release-tag>` below with that tag, or with whichever release you have
-   validated:
+1. Install the CLI. Replace `<release-tag>` with the version you want from
+   [Releases](https://github.com/simplycubed/code/releases):
 
 ```sh
 go install github.com/simplycubed/code/cmd/simplycubed@<release-tag>
 simplycubed version
 ```
 
-With `v0.1.9`, `simplycubed version` prints `0.1.9`.
+With `v0.2.0`, `simplycubed version` prints `0.2.0`.
 
 2. In the target repository, generate the setup files and labels:
 
