@@ -130,10 +130,16 @@ exit 0
 		"disable the App webhook, set install visibility to Any account, and install it on the repo",
 		"write the real gate in .github/simplycubed.yml",
 		"verify that gate is green on your main branch",
-		"set the SIMPLYCUBED_GH_APP_CLIENT_ID repo variable to the App Client ID",
-		"add the SIMPLYCUBED_GH_APP_PRIVATE_KEY repo secret with the full PEM, including BEGIN/END lines",
-		"set the AZURE_OPENAI_ENDPOINT repo variable",
-		"add the AZURE_OPENAI_API_KEY repo secret",
+		// Naming the section is the point: two of the four go under Variables
+		// and two under Secrets, and a value filed on the wrong tab reads back
+		// empty rather than erroring.
+		"add two repository VARIABLES",
+		"SIMPLYCUBED_GH_APP_CLIENT_ID       the App Client ID, the Iv23 string on the App settings page",
+		"SIMPLYCUBED_AZURE_OPENAI_ENDPOINT  e.g. https://<resource>.openai.azure.com",
+		"add two repository SECRETS",
+		"SIMPLYCUBED_GH_APP_PRIVATE_KEY     the full PEM, including the BEGIN and END lines",
+		"SIMPLYCUBED_AZURE_OPENAI_API_KEY   the Azure OpenAI key",
+		"Variables and Secrets are different tabs",
 		"merge the PR containing the config and workflow changes",
 		"file an issue and apply the sc:go label",
 	} {
@@ -245,7 +251,7 @@ exit 0
 	for _, want := range []string{
 		"uses: simplycubed/code/.github/workflows/simplycubed.yml@v0.1.0",
 		"github-app-client-id: ${{ vars.SIMPLYCUBED_GH_APP_CLIENT_ID }}",
-		"azure-openai-api-key: ${{ secrets.AZURE_OPENAI_API_KEY }}",
+		"azure-openai-api-key: ${{ secrets.SIMPLYCUBED_AZURE_OPENAI_API_KEY }}",
 		"github-app-private-key: ${{ secrets.SIMPLYCUBED_GH_APP_PRIVATE_KEY }}",
 	} {
 		if !strings.Contains(workflow, want) {
@@ -410,8 +416,8 @@ func buildVersionForTest(t *testing.T, version string) string {
 
 func TestEngineEnvValidatesEndpointAndKey(t *testing.T) {
 	set := func(endpoint, key string) {
-		t.Setenv("AZURE_OPENAI_ENDPOINT", endpoint)
-		t.Setenv("AZURE_OPENAI_API_KEY", key)
+		t.Setenv("SIMPLYCUBED_AZURE_OPENAI_ENDPOINT", endpoint)
+		t.Setenv("SIMPLYCUBED_AZURE_OPENAI_API_KEY", key)
 	}
 	// A trailing slash is normalized away, because the engine appends a path.
 	set("https://r.openai.azure.com/", "k")
@@ -436,8 +442,8 @@ func TestEngineEnvValidatesEndpointAndKey(t *testing.T) {
 }
 
 func TestEngineEnvSkipsAzureForClaude(t *testing.T) {
-	t.Setenv("AZURE_OPENAI_ENDPOINT", "")
-	t.Setenv("AZURE_OPENAI_API_KEY", "")
+	t.Setenv("SIMPLYCUBED_AZURE_OPENAI_ENDPOINT", "")
+	t.Setenv("SIMPLYCUBED_AZURE_OPENAI_API_KEY", "")
 	got, err := engineEnv(&config.Config{Engine: "claude"})
 	if err != nil || got != "" {
 		t.Fatalf("engineEnv(claude) = %q, %v", got, err)
@@ -446,8 +452,8 @@ func TestEngineEnvSkipsAzureForClaude(t *testing.T) {
 
 func TestPreflightCmd(t *testing.T) {
 	t.Run("reports ok when config and engine settings are present", func(t *testing.T) {
-		t.Setenv("AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
-		t.Setenv("AZURE_OPENAI_API_KEY", "k")
+		t.Setenv("SIMPLYCUBED_AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
+		t.Setenv("SIMPLYCUBED_AZURE_OPENAI_API_KEY", "k")
 		var out bytes.Buffer
 		if err := preflightCmd([]string{"--repo-dir", repoWithConfigBody(t, "gate: make check\n")}, &out); err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -458,8 +464,8 @@ func TestPreflightCmd(t *testing.T) {
 	})
 
 	t.Run("allows claude with no Azure settings", func(t *testing.T) {
-		t.Setenv("AZURE_OPENAI_ENDPOINT", "")
-		t.Setenv("AZURE_OPENAI_API_KEY", "")
+		t.Setenv("SIMPLYCUBED_AZURE_OPENAI_ENDPOINT", "")
+		t.Setenv("SIMPLYCUBED_AZURE_OPENAI_API_KEY", "")
 		var out bytes.Buffer
 		if err := preflightCmd([]string{"--repo-dir", repoWithConfigBody(t, "gate: make check\nengine: claude\n")}, &out); err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -472,8 +478,8 @@ func TestPreflightCmd(t *testing.T) {
 	// The whole point of preflight is naming what is wrong, so each failure
 	// asserts the message identifies the thing the operator has to fix.
 	t.Run("names the missing config", func(t *testing.T) {
-		t.Setenv("AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
-		t.Setenv("AZURE_OPENAI_API_KEY", "k")
+		t.Setenv("SIMPLYCUBED_AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
+		t.Setenv("SIMPLYCUBED_AZURE_OPENAI_API_KEY", "k")
 		err := preflightCmd([]string{"--repo-dir", t.TempDir()}, io.Discard)
 		if err == nil || !strings.Contains(err.Error(), "load config") {
 			t.Fatalf("err = %v, want a config error", err)
@@ -481,10 +487,10 @@ func TestPreflightCmd(t *testing.T) {
 	})
 
 	t.Run("names the missing endpoint", func(t *testing.T) {
-		t.Setenv("AZURE_OPENAI_ENDPOINT", "")
-		t.Setenv("AZURE_OPENAI_API_KEY", "k")
+		t.Setenv("SIMPLYCUBED_AZURE_OPENAI_ENDPOINT", "")
+		t.Setenv("SIMPLYCUBED_AZURE_OPENAI_API_KEY", "k")
 		err := preflightCmd([]string{"--repo-dir", repoWithConfigBody(t, "gate: make check\n")}, io.Discard)
-		if err == nil || !strings.Contains(err.Error(), "AZURE_OPENAI_ENDPOINT") {
+		if err == nil || !strings.Contains(err.Error(), "SIMPLYCUBED_AZURE_OPENAI_ENDPOINT") {
 			t.Fatalf("err = %v, want the endpoint named", err)
 		}
 	})
@@ -499,8 +505,8 @@ func TestPreflightCmd(t *testing.T) {
 func TestEngineEnvRejectsAnUnparseableEndpoint(t *testing.T) {
 	// A control character makes url.Parse itself fail, which is a different
 	// branch from the scheme and host checks.
-	t.Setenv("AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com/\x7f")
-	t.Setenv("AZURE_OPENAI_API_KEY", "k")
+	t.Setenv("SIMPLYCUBED_AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com/\x7f")
+	t.Setenv("SIMPLYCUBED_AZURE_OPENAI_API_KEY", "k")
 	if _, err := engineEnv(&config.Config{}); err == nil {
 		t.Fatal("expected an error for an unparseable endpoint")
 	}
@@ -565,8 +571,8 @@ func TestDispatch(t *testing.T) {
 	// operator reads out of a workflow log.
 	for _, cmd := range []string{"preflight", "run", "address"} {
 		t.Run(cmd+" reports failure on stderr and exits 1", func(t *testing.T) {
-			t.Setenv("AZURE_OPENAI_ENDPOINT", "")
-			t.Setenv("AZURE_OPENAI_API_KEY", "")
+			t.Setenv("SIMPLYCUBED_AZURE_OPENAI_ENDPOINT", "")
+			t.Setenv("SIMPLYCUBED_AZURE_OPENAI_API_KEY", "")
 			var out, errOut bytes.Buffer
 			// An empty directory has no config, so each command fails early.
 			code := dispatch([]string{cmd, "--repo-dir", t.TempDir()}, &out, &errOut)
@@ -600,8 +606,8 @@ func repoWithConfigBody(t *testing.T, body string) string {
 
 func TestPrepare(t *testing.T) {
 	t.Run("builds the dependency graph and returns the positional arguments", func(t *testing.T) {
-		t.Setenv("AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
-		t.Setenv("AZURE_OPENAI_API_KEY", "k")
+		t.Setenv("SIMPLYCUBED_AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
+		t.Setenv("SIMPLYCUBED_AZURE_OPENAI_API_KEY", "k")
 		repo := repoWithConfig(t)
 		c, rest, err := prepare("run", []string{"--repo-dir", repo, "--state-dir", t.TempDir(), "o/r#1"})
 		if err != nil {
@@ -621,25 +627,25 @@ func TestPrepare(t *testing.T) {
 	// prepare is the common entry path, so each way the environment is wrong
 	// has to stop here rather than surface later as an engine failure.
 	t.Run("refuses a repo with no config", func(t *testing.T) {
-		t.Setenv("AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
-		t.Setenv("AZURE_OPENAI_API_KEY", "k")
+		t.Setenv("SIMPLYCUBED_AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
+		t.Setenv("SIMPLYCUBED_AZURE_OPENAI_API_KEY", "k")
 		if _, _, err := prepare("run", []string{"--repo-dir", t.TempDir()}); err == nil {
 			t.Fatal("expected an error for a repo with no config")
 		}
 	})
 
 	t.Run("refuses a missing engine key", func(t *testing.T) {
-		t.Setenv("AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
-		t.Setenv("AZURE_OPENAI_API_KEY", "")
+		t.Setenv("SIMPLYCUBED_AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
+		t.Setenv("SIMPLYCUBED_AZURE_OPENAI_API_KEY", "")
 		_, _, err := prepare("run", []string{"--repo-dir", repoWithConfig(t)})
-		if err == nil || !strings.Contains(err.Error(), "AZURE_OPENAI_API_KEY") {
+		if err == nil || !strings.Contains(err.Error(), "SIMPLYCUBED_AZURE_OPENAI_API_KEY") {
 			t.Fatalf("err = %v, want the key named", err)
 		}
 	})
 
 	t.Run("allows claude with no Azure settings and skips codex config", func(t *testing.T) {
-		t.Setenv("AZURE_OPENAI_ENDPOINT", "")
-		t.Setenv("AZURE_OPENAI_API_KEY", "")
+		t.Setenv("SIMPLYCUBED_AZURE_OPENAI_ENDPOINT", "")
+		t.Setenv("SIMPLYCUBED_AZURE_OPENAI_API_KEY", "")
 		stateDir := t.TempDir()
 		c, _, err := prepare("run", []string{"--repo-dir", repoWithConfigBody(t, "gate: make check\nengine: claude\n"), "--state-dir", stateDir})
 		if err != nil {
@@ -662,8 +668,8 @@ func TestPrepare(t *testing.T) {
 	// --dry-run has to reach both the forge and the VCS, or a "dry" run would
 	// still push.
 	t.Run("dry-run wraps the forge and disables the push", func(t *testing.T) {
-		t.Setenv("AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
-		t.Setenv("AZURE_OPENAI_API_KEY", "k")
+		t.Setenv("SIMPLYCUBED_AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
+		t.Setenv("SIMPLYCUBED_AZURE_OPENAI_API_KEY", "k")
 		c, _, err := prepare("run", []string{"--repo-dir", repoWithConfig(t), "--state-dir", t.TempDir(), "--dry-run"})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -678,8 +684,8 @@ func TestPrepare(t *testing.T) {
 	})
 
 	t.Run("a normal run does neither", func(t *testing.T) {
-		t.Setenv("AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
-		t.Setenv("AZURE_OPENAI_API_KEY", "k")
+		t.Setenv("SIMPLYCUBED_AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
+		t.Setenv("SIMPLYCUBED_AZURE_OPENAI_API_KEY", "k")
 		c, _, err := prepare("run", []string{"--repo-dir", repoWithConfig(t), "--state-dir", t.TempDir()})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -956,8 +962,8 @@ func TestCommandCmdAnswersAVerbAimedAtTheWrongSurface(t *testing.T) {
 // directory with no config, so reaching the loop fails at config load - which
 // is how we know it was reached at all.
 func TestCommandCmdRoutesRecognisedVerbsToTheirLoops(t *testing.T) {
-	t.Setenv("AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
-	t.Setenv("AZURE_OPENAI_API_KEY", "k")
+	t.Setenv("SIMPLYCUBED_AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
+	t.Setenv("SIMPLYCUBED_AZURE_OPENAI_API_KEY", "k")
 
 	for name, body := range map[string]string{
 		"go routes to run":          "@simplycubed-code go",
@@ -1090,8 +1096,8 @@ func TestFetchIssue(t *testing.T) {
 }
 
 func TestRunAndAddressRequireARef(t *testing.T) {
-	t.Setenv("AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
-	t.Setenv("AZURE_OPENAI_API_KEY", "k")
+	t.Setenv("SIMPLYCUBED_AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
+	t.Setenv("SIMPLYCUBED_AZURE_OPENAI_API_KEY", "k")
 	repo := repoWithConfig(t)
 	for name, fn := range map[string]func([]string) error{"run": runCmd, "address": addressCmd} {
 		err := fn([]string{"--repo-dir", repo, "--state-dir", t.TempDir()})
@@ -1160,9 +1166,9 @@ func TestAnswerPathEdges(t *testing.T) {
 // false for everyone but us and the preflight never ran where it was needed.
 func TestWorkflowRestrictedPushCoversAnyBotIdentity(t *testing.T) {
 	t.Run("an adopter's own bot is restricted", func(t *testing.T) {
-		t.Setenv("AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
-		t.Setenv("AZURE_OPENAI_API_KEY", "k")
-		t.Setenv("SIMPLYCUBED_SELF_LOGIN", "acme-code[bot]")
+		t.Setenv("SIMPLYCUBED_AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
+		t.Setenv("SIMPLYCUBED_AZURE_OPENAI_API_KEY", "k")
+		t.Setenv("SIMPLYCUBED_GH_APP_LOGIN", "acme-code[bot]")
 		c, _, err := prepare("run", []string{"--repo-dir", repoWithConfig(t), "--state-dir", t.TempDir(), "o/r#1"})
 		if err != nil {
 			t.Fatalf("prepare: %v", err)
@@ -1176,9 +1182,9 @@ func TestWorkflowRestrictedPushCoversAnyBotIdentity(t *testing.T) {
 	})
 
 	t.Run("a human running locally is not restricted", func(t *testing.T) {
-		t.Setenv("AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
-		t.Setenv("AZURE_OPENAI_API_KEY", "k")
-		t.Setenv("SIMPLYCUBED_SELF_LOGIN", "")
+		t.Setenv("SIMPLYCUBED_AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
+		t.Setenv("SIMPLYCUBED_AZURE_OPENAI_API_KEY", "k")
+		t.Setenv("SIMPLYCUBED_GH_APP_LOGIN", "")
 		c, _, err := prepare("run", []string{"--repo-dir", repoWithConfig(t), "--state-dir", t.TempDir(), "o/r#1"})
 		if err != nil {
 			t.Fatalf("prepare: %v", err)

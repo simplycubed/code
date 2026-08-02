@@ -98,8 +98,8 @@ jobs:
 
       - name: Preflight
         env:
-          AZURE_OPENAI_ENDPOINT: ${{ inputs['azure-openai-endpoint'] }}
-          AZURE_OPENAI_API_KEY: ${{ secrets['azure-openai-api-key'] }}
+          SIMPLYCUBED_AZURE_OPENAI_ENDPOINT: ${{ inputs['azure-openai-endpoint'] }}
+          SIMPLYCUBED_AZURE_OPENAI_API_KEY: ${{ secrets['azure-openai-api-key'] }}
         run: simplycubed preflight --repo-dir .
 
       - name: Let the engine sandbox start
@@ -127,8 +127,8 @@ jobs:
       - name: Run SimplyCubed
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          AZURE_OPENAI_ENDPOINT: ${{ inputs['azure-openai-endpoint'] }}
-          AZURE_OPENAI_API_KEY: ${{ secrets['azure-openai-api-key'] }}
+          SIMPLYCUBED_AZURE_OPENAI_ENDPOINT: ${{ inputs['azure-openai-endpoint'] }}
+          SIMPLYCUBED_AZURE_OPENAI_API_KEY: ${{ secrets['azure-openai-api-key'] }}
           COMMENT_BODY: ${{ inputs['comment-body'] }}
         # --base is explicit because actions/checkout never creates origin/HEAD,
         # which is the CLI's default base. The CLI resolves that case on its own
@@ -186,8 +186,8 @@ jobs:
 
       - name: Preflight
         env:
-          AZURE_OPENAI_ENDPOINT: ${{ inputs['azure-openai-endpoint'] }}
-          AZURE_OPENAI_API_KEY: ${{ secrets['azure-openai-api-key'] }}
+          SIMPLYCUBED_AZURE_OPENAI_ENDPOINT: ${{ inputs['azure-openai-endpoint'] }}
+          SIMPLYCUBED_AZURE_OPENAI_API_KEY: ${{ secrets['azure-openai-api-key'] }}
         run: simplycubed preflight --repo-dir .
 
       - name: Let the engine sandbox start
@@ -215,8 +215,8 @@ jobs:
       - name: Address review feedback
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          AZURE_OPENAI_ENDPOINT: ${{ inputs['azure-openai-endpoint'] }}
-          AZURE_OPENAI_API_KEY: ${{ secrets['azure-openai-api-key'] }}
+          SIMPLYCUBED_AZURE_OPENAI_ENDPOINT: ${{ inputs['azure-openai-endpoint'] }}
+          SIMPLYCUBED_AZURE_OPENAI_API_KEY: ${{ secrets['azure-openai-api-key'] }}
           COMMENT_BODY: ${{ inputs['comment-body'] }}
         run: |
           if [ -n "${COMMENT_BODY}" ]; then

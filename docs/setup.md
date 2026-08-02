@@ -63,8 +63,8 @@ Before wiring GitHub Actions, you can prove the loop works from your terminal
 with the same config file:
 
 ```sh
-export AZURE_OPENAI_ENDPOINT="https://<resource>.openai.azure.com"
-export AZURE_OPENAI_API_KEY="<key>"
+export SIMPLYCUBED_AZURE_OPENAI_ENDPOINT="https://<resource>.openai.azure.com"
+export SIMPLYCUBED_AZURE_OPENAI_API_KEY="<key>"
 simplycubed run owner/repo#N --repo-dir .
 ```
 
@@ -79,8 +79,8 @@ Then add these repository settings:
 
 - Variable: `SIMPLYCUBED_GH_APP_CLIENT_ID`, the App Client ID, the `Iv23` string on the App settings page
 - Secret: `SIMPLYCUBED_GH_APP_PRIVATE_KEY`
-- Variable: `AZURE_OPENAI_ENDPOINT`
-- Secret: `AZURE_OPENAI_API_KEY`
+- Variable: `SIMPLYCUBED_AZURE_OPENAI_ENDPOINT`
+- Secret: `SIMPLYCUBED_AZURE_OPENAI_API_KEY`
 
 The Actions runtime authenticates as the `simplycubed-code` GitHub App, so the
 App ID and private key are required. Store the private key as the full PEM
@@ -139,7 +139,7 @@ flowchart TB
     cfg[".github/simplycubed.yml<br/>gate, engine, review<br/>committed, never holds a key"]
 
     subgraph local["Local CLI: you are the identity"]
-        L1["your shell<br/>AZURE_OPENAI_ENDPOINT<br/>AZURE_OPENAI_API_KEY"]
+        L1["your shell<br/>SIMPLYCUBED_AZURE_OPENAI_ENDPOINT<br/>SIMPLYCUBED_AZURE_OPENAI_API_KEY"]
         L2["your gh auth"]
         L3["simplycubed run / address"]
         L4["commits and PR authored by you"]
@@ -149,8 +149,8 @@ flowchart TB
     end
 
     subgraph actions["GitHub Actions: the App is the identity"]
-        A1["repository variables<br/>AZURE_OPENAI_ENDPOINT<br/>SIMPLYCUBED_GH_APP_CLIENT_ID"]
-        A2["repository secrets<br/>AZURE_OPENAI_API_KEY<br/>SIMPLYCUBED_GH_APP_PRIVATE_KEY"]
+        A1["repository variables<br/>SIMPLYCUBED_AZURE_OPENAI_ENDPOINT<br/>SIMPLYCUBED_GH_APP_CLIENT_ID"]
+        A2["repository secrets<br/>SIMPLYCUBED_AZURE_OPENAI_API_KEY<br/>SIMPLYCUBED_GH_APP_PRIVATE_KEY"]
         A3["per-job installation token<br/>contents, issues, pull requests"]
         A4["simplycubed run / address"]
         A5["commits and PR authored by<br/>simplycubed-code[bot]"]
@@ -171,8 +171,8 @@ The shipped Codex-on-Azure setup needs these values:
 
 | Name | Where it is used | Secret? |
 | --- | --- | --- |
-| `AZURE_OPENAI_ENDPOINT` | Base Azure OpenAI endpoint, for example `https://<resource>.openai.azure.com` | No |
-| `AZURE_OPENAI_API_KEY` | Azure OpenAI API key | Yes |
+| `SIMPLYCUBED_AZURE_OPENAI_ENDPOINT` | Base Azure OpenAI endpoint, for example `https://<resource>.openai.azure.com` | No |
+| `SIMPLYCUBED_AZURE_OPENAI_API_KEY` | Azure OpenAI API key | Yes |
 | model or deployment name | Optional override passed as `--model` locally or `model:` in the caller workflow | No |
 
 If you do not set a model override, the CLI and reusable workflow default to
@@ -182,10 +182,10 @@ If you do not set a model override, the CLI and reusable workflow default to
 
 The API key lives in different places depending on where `simplycubed` runs.
 
-- Local CLI run: export `AZURE_OPENAI_API_KEY` in the shell that runs
+- Local CLI run: export `SIMPLYCUBED_AZURE_OPENAI_API_KEY` in the shell that runs
   `simplycubed`. Do not commit it, and do not expect a GitHub repository secret
   to appear in your local terminal.
-- GitHub Actions run: store `AZURE_OPENAI_API_KEY` as a repository secret. The
+- GitHub Actions run: store `SIMPLYCUBED_AZURE_OPENAI_API_KEY` as a repository secret. The
   caller workflow passes it into the reusable workflow job as an environment
   variable.
 
@@ -200,15 +200,15 @@ Use the same endpoint and key in both places, but wire them differently.
 
 For local runs such as `simplycubed run owner/repo#123`, the CLI reads:
 
-- `AZURE_OPENAI_ENDPOINT` from your shell environment
-- `AZURE_OPENAI_API_KEY` from your shell environment
+- `SIMPLYCUBED_AZURE_OPENAI_ENDPOINT` from your shell environment
+- `SIMPLYCUBED_AZURE_OPENAI_API_KEY` from your shell environment
 - the repo gate and label prefix from `.github/simplycubed.yml`
 
 Example:
 
 ```sh
-export AZURE_OPENAI_ENDPOINT="https://<resource>.openai.azure.com"
-export AZURE_OPENAI_API_KEY="<key>"
+export SIMPLYCUBED_AZURE_OPENAI_ENDPOINT="https://<resource>.openai.azure.com"
+export SIMPLYCUBED_AZURE_OPENAI_API_KEY="<key>"
 simplycubed run owner/repo#123 --repo-dir .
 ```
 
@@ -230,9 +230,9 @@ simplycubed run owner/repo#123 --repo-dir .
 For the hosted-in-your-GitHub path, the caller workflow in your repository
 passes:
 
-- `vars.AZURE_OPENAI_ENDPOINT` to the reusable workflow input
+- `vars.SIMPLYCUBED_AZURE_OPENAI_ENDPOINT` to the reusable workflow input
   `azure-openai-endpoint`
-- `secrets.AZURE_OPENAI_API_KEY` to the reusable workflow secret
+- `secrets.SIMPLYCUBED_AZURE_OPENAI_API_KEY` to the reusable workflow secret
   `azure-openai-api-key`
 - `vars.SIMPLYCUBED_GH_APP_CLIENT_ID` to the reusable workflow input
   `github-app-client-id`
