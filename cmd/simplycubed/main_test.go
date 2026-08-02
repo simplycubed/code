@@ -1337,3 +1337,83 @@ func TestPreflightCatchesHandleDrift(t *testing.T) {
 		}
 	})
 }
+
+// resolveAppName decides what handle init writes into both files, so each way
+// it can be reached matters: an explicit flag, an existing config, or neither.
+func TestResolveAppName(t *testing.T) {
+	t.Run("the flag wins and is normalised", func(t *testing.T) {
+		for _, in := range []string{"acme-code", "@acme-code", "acme-code[bot]", "@acme-code[bot]", "  acme-code  "} {
+			got, err := resolveAppName(t.TempDir(), in)
+			if err != nil || got != "acme-code" {
+				t.Fatalf("resolveAppName(%q) = %q, %v; want acme-code", in, got, err)
+			}
+		}
+	})
+
+	t.Run("an existing config keeps the handle a team already types", func(t *testing.T) {
+		// Re-running init to pick up a new release must not silently change the
+		// handle, or every comment in the repository stops working.
+		got, err := resolveAppName(repoWithConfig(t), "")
+		if err != nil || got != "acme-code" {
+			t.Fatalf("got %q, %v; want the configured handle", got, err)
+		}
+	})
+
+	t.Run("the flag overrides an existing config", func(t *testing.T) {
+		got, err := resolveAppName(repoWithConfig(t), "renamed-code")
+		if err != nil || got != "renamed-code" {
+			t.Fatalf("got %q, %v; want the flag to win", got, err)
+		}
+	})
+
+	t.Run("neither is an error that explains why", func(t *testing.T) {
+		_, err := resolveAppName(t.TempDir(), "")
+		if err == nil {
+			t.Fatal("a first install with no handle must be refused, not guessed")
+		}
+		// Guessing would answer as the wrong bot, so the message has to say the
+		// name is the adopter's rather than just demanding a flag.
+		for _, want := range []string{"--app-name", "unique to you"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Fatalf("err = %q, expected it to mention %q", err, want)
+			}
+		}
+	})
+}
+
+// appNameFor parses --repo-dir out of flags it does not otherwise own, so both
+// spellings have to work or a command reads the wrong repository's config.
+func TestAppNameForReadsRepoDirInEitherForm(t *testing.T) {
+	repo := repoWithConfig(t)
+	for _, argv := range [][]string{
+		{"--repo-dir", repo, "o/r#1"},
+		{"--repo-dir=" + repo, "o/r#1"},
+		{"-repo-dir", repo},
+		{"-repo-dir=" + repo},
+	} {
+		got, err := appNameFor(argv)
+		if err != nil || got != "acme-code" {
+			t.Fatalf("appNameFor(%v) = %q, %v; want acme-code", argv, got, err)
+		}
+	}
+
+	if _, err := appNameFor([]string{"--repo-dir", t.TempDir()}); err == nil {
+		t.Fatal("a repository with no config must fail rather than parse nothing silently")
+	}
+}
+
+// commandCmd has to read the config before it can parse anything, so a
+// repository with no config fails there rather than silently parsing no
+// command and looking like a comment the agent chose to ignore.
+func TestCommandCmdSurfacesConfigProblems(t *testing.T) {
+	var out bytes.Buffer
+	err := commandCmd([]string{"--body", "@acme-code go", "--repo-dir", t.TempDir(), "o/r#1"}, &out)
+	if err == nil || !strings.Contains(err.Error(), "load config") {
+		t.Fatalf("err = %v, want a config error rather than a quiet no-op", err)
+	}
+
+	// A malformed --body is rejected before the config is ever read.
+	if err := commandCmd([]string{"--body"}, &out); err == nil {
+		t.Fatal("--body with no value must be an error")
+	}
+}

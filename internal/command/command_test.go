@@ -122,3 +122,19 @@ func TestHandleIsTheAdoptersOwnApp(t *testing.T) {
 		t.Fatalf("MentionFor = %q; the [bot] suffix is how GitHub renders the login, not how you mention it", got)
 	}
 }
+
+// A repository that has not said which App it installed has no handle to answer
+// to. Guessing one would answer as the wrong bot, which is worse than silence.
+func TestNoConfiguredAppMeansNoCommands(t *testing.T) {
+	for _, body := range []string{"@acme-code go", "@acme-code help", "@acme-code"} {
+		if got := Parse(body, ""); got != None {
+			t.Fatalf("Parse(%q, \"\") = %q, want None", body, got)
+		}
+		if Addressed(body, "") {
+			t.Fatalf("Addressed(%q, \"\") = true, want false", body)
+		}
+		if Addressed(body, "   ") {
+			t.Fatalf("Addressed(%q, whitespace) = true, want false", body)
+		}
+	}
+}
