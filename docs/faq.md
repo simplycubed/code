@@ -15,7 +15,7 @@ You can use SimplyCubed Code two ways:
   runs your gate, and opens or updates a pull request as you;
 - or through the reusable workflow that runs inside your own GitHub Actions, as
   described in the README's install section, which now mints a per-job GitHub
-  App installation token for `simplycubed-code[bot]`.
+  App installation token for your own App's `[bot]` identity.
 
 The GitHub App is configured with only `contents`, `pull requests`, and
 `issues`, and the reusable workflow proves that scope at runtime by expecting an

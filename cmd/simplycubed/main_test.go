@@ -126,8 +126,19 @@ exit 0
 	for _, want := range []string{
 		"wrote " + configPath,
 		"created labels: sc:go, sc:queued, sc:working, sc:review, sc:blocked, sc:done",
-		"install the simplycubed-code GitHub App with contents, issues, and pull requests permissions only",
-		"disable the App webhook, set install visibility to Any account, and install it on the repo",
+		// The App has to be the adopter's own, and the output has to say why.
+		// Without that, "create a GitHub App" reads as busywork we could have
+		// done for them, and the natural next move is to look for ours.
+		"Create your OWN GitHub App",
+		"its private key is what mints",
+		"App names are globally unique, so you cannot reuse ours",
+		"Contents: Read and write",
+		"Issues: Read and write",
+		"Pull requests: Read and write",
+		"Uncheck Active under Webhook",
+		"Set Any account under Where can this GitHub App be installed",
+		"GitHub\n     shows it once",
+		"https://docs.github.com/apps/creating-github-apps",
 		"write the real gate in .github/simplycubed.yml",
 		"verify that gate is green on your main branch",
 		// Naming the section is the point: two of the four go under Variables
