@@ -6,16 +6,6 @@ SimplyCubed Code is an autonomous coding agent you install into your own GitHub.
 
 > Beta. Current release: `v0.2.0`. Product overview: [simplycubed.com/code](https://simplycubed.com/code?utm_source=github&utm_medium=readme&utm_campaign=code). See [Status](#status).
 
-### Try it without letting it write anything
-
-```sh
-simplycubed run owner/repo#12 --dry-run
-```
-
-That runs the whole loop, including the model and your own gate. It makes no GitHub writes and never pushes; it prints what it would have done instead.
-
-`simplycubed init --workflow` also writes a self-test into your repository. Dispatch it once and it checks, in your own runner, that the App token resolves to a bot, that it can read what it needs, and that it is denied Actions administration. The install fails if that denial does not hold. Delete the workflow once it passes.
-
 ## Product overview
 
 SimplyCubed Code turns a GitHub issue into a proposed code change inside your own environment. Your team keeps the repository, runners, secrets, and branch protection rules. The agent does the implementation work, but it never merges its own pull requests.
@@ -35,6 +25,49 @@ The product is designed for teams that want autonomous implementation without ha
 - It uses your repository's existing quality gate instead of inventing its own definition of done.
 - It is built for a human-review workflow, not auto-merge automation.
 - It keeps permissions narrow: the agent can propose changes, but not deploy or merge them.
+
+## Installation
+
+Install the pinned release you want to run. Replace `<release-tag>` with the
+version you want from [Releases](https://github.com/simplycubed/code/releases):
+
+```sh
+go install github.com/simplycubed/code/cmd/simplycubed@<release-tag>
+simplycubed version
+```
+
+With `v0.2.0`, that prints `0.2.0`. Pre-1.0 releases follow semver with the
+usual caveat: minor versions may still change behavior. Pin the tag you have
+validated rather than floating on `@latest`.
+
+### Install into your GitHub
+
+To run the loop inside your own GitHub Actions:
+
+1. Create and install **your own** GitHub App. App names are globally unique, so it cannot be named after ours, and its private key is what mints the tokens that act on your repository.
+   Repository permissions: `Contents`, `Pull requests`, and `Issues` only.
+   Do not grant `Workflows`, `Administration`, `Environments`, or `Secrets`.
+   That means the App cannot push changes under `.github/workflows/`: if a run needs to edit a workflow file, make that commit as a human or run the CLI locally under your own `gh` auth instead of the App token.
+   Disable the App webhook: the App is an identity that mints per-job tokens, and there is no SimplyCubed server to receive deliveries.
+   Set install visibility to `Any account`.
+   Install it on the repo.
+2. In the adopter repo, run `simplycubed init --workflow`. That writes `.github/simplycubed.yml`, writes `.github/workflows/simplycubed.yml` pinned to a released reusable-workflow tag, and creates the `sc:*` labels through your local `gh` auth.
+3. Fill in the real `gate:` in `.github/simplycubed.yml`.
+4. Add repository variable `SIMPLYCUBED_GH_APP_CLIENT_ID` (the App Client ID, the `Iv23` string on the App settings page), repository secret `SIMPLYCUBED_GH_APP_PRIVATE_KEY`, repository variable `SIMPLYCUBED_AZURE_OPENAI_ENDPOINT`, and repository secret `SIMPLYCUBED_AZURE_OPENAI_API_KEY`.
+   These are per-repository and are never inherited from SimplyCubed: a reusable workflow runs with the calling repository's own variables and secrets, so you bring your own Azure endpoint and key, and pay for your own tokens.
+   The private key secret must be the full PEM contents, including the `-----BEGIN` and `-----END` lines.
+5. Open a setup pull request in the adopter repo and merge it yourself. Setup files are written locally by `simplycubed init` and merged by a human, because the runtime holds no `workflows` permission and cannot add its own workflow files.
+6. File an issue and apply `sc:go`. Reviews submitted on the resulting pull request call back into the same reusable workflow for the fix-on-request loop.
+
+Each reusable-workflow job mints its own installation token for the current
+repository and asks only for `contents`, `pull requests`, and `issues`. The
+workflow then probes an Actions-administration endpoint and expects a denial, so
+the run log shows the token does not carry the workflow/admin scope the App was
+deliberately denied.
+If a change touches `.github/workflows/`, that token cannot deliver it; use a
+human commit or a local CLI run under your own GitHub auth for those edits.
+
+[docs/setup.md](docs/setup.md) walks the whole install in one place, from the CLI through the first issue-driven pull request, and is the reference if any step above is unclear.
 
 ## How it works
 
@@ -90,80 +123,15 @@ flowchart LR
 
 A plain comment in the conversation box is not a review. To run the fixer from a review, submit it through **Files changed → Review changes**. Every path checks that the person has write access before anything else happens.
 
-## Deployment model
-
-SimplyCubed Code is deployed into your GitHub organization. There is no SimplyCubed-hosted control plane managing your repositories for you. When your team installs the GitHub App and adds the workflow, the work runs on your runners inside your account.
-
-### What it can do, and what stops it
-
-It can open a pull request against a branch. That is the strongest action available to it.
-
-What stops it, roughly in order of how much you should trust each one:
-
-1. **It cannot merge, by construction.** The GitHub interface it is built against has no merge method: see [`internal/forge/forge.go`](internal/forge/forge.go). The model is not being asked to follow a rule here. The capability is absent from the code.
-2. The App holds three permissions: contents, pull requests, issues. Not workflows, administration, environments, or secrets. Each job mints its own token, scoped to one repository.
-3. That scope is proved on every run rather than claimed. The workflow calls an Actions-administration endpoint and expects the denial, so your run log carries the evidence.
-4. **The model's shell never holds a GitHub token.** `GH_TOKEN` and `GITHUB_TOKEN` are stripped from the engine's environment before it starts.
-5. Neither engine's "dangerous" bypass flag is set. When a change cannot be made under those constraints, the run stops and a human finishes it. [Why](docs/faq.md).
-6. No deploy credentials, and no path to production. Your branch protection rules decide what happens once the pull request exists.
-
-What that means for customers:
-
-- Your code stays in your repos. SimplyCubed never receives it.
-- Your model provider keys, the GitHub App's private key, and any other secrets stay in your GitHub secret store. They are read by your own Actions runs and never transit our infrastructure.
-- It does not use the engines' "dangerous" bypass flags, and does not receive a GitHub token in the model's shell. When a change cannot be made under those constraints, the run stops and a human finishes it. See the [FAQ](docs/faq.md).
-- The agent holds no deploy credentials and has no path to production. The most it can do is open a pull request against a branch. A human and your branch protection rules decide what happens next.
-
-Setup files are generated locally by `simplycubed init` and then merged by a human, because the runtime holds no `workflows` permission and cannot add or update workflow files on its own.
-
-The GitHub App identity is your own App's `[bot]` account. That bot is the single audit signal for everything the agent does.
-
-## Getting started
-
-Start with [docs/setup.md](docs/setup.md). It walks through customer installation in a repository you control, from CLI install through the first issue-driven pull request.
-
-## Installation
-
-Install the pinned release you want to run. Replace `<release-tag>` with the
-version you want from [Releases](https://github.com/simplycubed/code/releases):
+## Trying it without letting it write anything
 
 ```sh
-go install github.com/simplycubed/code/cmd/simplycubed@<release-tag>
-simplycubed version
+simplycubed run owner/repo#12 --dry-run
 ```
 
-With `v0.2.0`, that prints `0.2.0`. Pre-1.0 releases follow semver with the
-usual caveat: minor versions may still change behavior. Pin the tag you have
-validated rather than floating on `@latest`.
+That runs the whole loop, including the model and your own gate. It makes no GitHub writes and never pushes; it prints what it would have done instead.
 
-Then follow the [setup guide in `docs/setup.md`](docs/setup.md) to add the repository config, install the GitHub workflow, set the required credentials, and run the first issue through the system.
-
-## Install into your GitHub
-
-To run the loop inside your own GitHub Actions:
-
-1. Create and install **your own** GitHub App. App names are globally unique, so it cannot be named after ours, and its private key is what mints the tokens that act on your repository.
-   Repository permissions: `Contents`, `Pull requests`, and `Issues` only.
-   Do not grant `Workflows`, `Administration`, `Environments`, or `Secrets`.
-   That means the App cannot push changes under `.github/workflows/`: if a run needs to edit a workflow file, make that commit as a human or run the CLI locally under your own `gh` auth instead of the App token.
-   Disable the App webhook: the App is an identity that mints per-job tokens, and there is no SimplyCubed server to receive deliveries.
-   Set install visibility to `Any account`.
-   Install it on the repo.
-2. In the adopter repo, run `simplycubed init --workflow`. That writes `.github/simplycubed.yml`, writes `.github/workflows/simplycubed.yml` pinned to a released reusable-workflow tag, and creates the `sc:*` labels through your local `gh` auth.
-3. Fill in the real `gate:` in `.github/simplycubed.yml`.
-4. Add repository variable `SIMPLYCUBED_GH_APP_CLIENT_ID` (the App Client ID, the `Iv23` string on the App settings page), repository secret `SIMPLYCUBED_GH_APP_PRIVATE_KEY`, repository variable `SIMPLYCUBED_AZURE_OPENAI_ENDPOINT`, and repository secret `SIMPLYCUBED_AZURE_OPENAI_API_KEY`.
-   These are per-repository and are never inherited from SimplyCubed: a reusable workflow runs with the calling repository's own variables and secrets, so you bring your own Azure endpoint and key, and pay for your own tokens.
-   The private key secret must be the full PEM contents, including the `-----BEGIN` and `-----END` lines.
-5. Open a setup pull request in the adopter repo and merge it yourself. Setup files are written locally by `simplycubed init` and merged by a human, because the runtime holds no `workflows` permission and cannot add its own workflow files.
-6. File an issue and apply `sc:go`. Reviews submitted on the resulting pull request call back into the same reusable workflow for the fix-on-request loop.
-
-Each reusable-workflow job mints its own installation token for the current
-repository and asks only for `contents`, `pull requests`, and `issues`. The
-workflow then probes an Actions-administration endpoint and expects a denial, so
-the run log shows the token does not carry the workflow/admin scope the App was
-deliberately denied.
-If a change touches `.github/workflows/`, that token cannot deliver it; use a
-human commit or a local CLI run under your own GitHub auth for those edits.
+`simplycubed init --workflow` also writes a self-test into your repository. Dispatch it once and it checks, in your own runner, that the App token resolves to a bot, that it can read what it needs, and that it is denied Actions administration. The install fails if that denial does not hold. Delete the workflow once it passes.
 
 ## Configuration
 
@@ -218,6 +186,34 @@ engine: claude
 ```
 
 The first engine adapter targets the Codex CLI running against Azure OpenAI. Today the shipped GitHub Actions setup needs an Azure endpoint, an API key, and optionally a deployment name override if you are not using the default `gpt-5.4`. The Claude Code adapter is written and tested behind `engine: claude`, and today is reachable from a local CLI run only. The `Runner` interface is the seam where other engines plug in.
+
+## Deployment model
+
+SimplyCubed Code is deployed into your GitHub organization. There is no SimplyCubed-hosted control plane managing your repositories for you. When your team installs the GitHub App and adds the workflow, the work runs on your runners inside your account.
+
+### What it can do, and what stops it
+
+It can open a pull request against a branch. That is the strongest action available to it.
+
+What stops it, roughly in order of how much you should trust each one:
+
+1. **It cannot merge, by construction.** The GitHub interface it is built against has no merge method: see [`internal/forge/forge.go`](internal/forge/forge.go). The model is not being asked to follow a rule here. The capability is absent from the code.
+2. The App holds three permissions: contents, pull requests, issues. Not workflows, administration, environments, or secrets. Each job mints its own token, scoped to one repository.
+3. That scope is proved on every run rather than claimed. The workflow calls an Actions-administration endpoint and expects the denial, so your run log carries the evidence.
+4. **The model's shell never holds a GitHub token.** `GH_TOKEN` and `GITHUB_TOKEN` are stripped from the engine's environment before it starts.
+5. Neither engine's "dangerous" bypass flag is set. When a change cannot be made under those constraints, the run stops and a human finishes it. [Why](docs/faq.md).
+6. No deploy credentials, and no path to production. Your branch protection rules decide what happens once the pull request exists.
+
+What that means for customers:
+
+- Your code stays in your repos. SimplyCubed never receives it.
+- Your model provider keys, the GitHub App's private key, and any other secrets stay in your GitHub secret store. They are read by your own Actions runs and never transit our infrastructure.
+- It does not use the engines' "dangerous" bypass flags, and does not receive a GitHub token in the model's shell. When a change cannot be made under those constraints, the run stops and a human finishes it. See the [FAQ](docs/faq.md).
+- The agent holds no deploy credentials and has no path to production. The most it can do is open a pull request against a branch. A human and your branch protection rules decide what happens next.
+
+Setup files are generated locally by `simplycubed init` and then merged by a human, because the runtime holds no `workflows` permission and cannot add or update workflow files on its own.
+
+The GitHub App identity is your own App's `[bot]` account. That bot is the single audit signal for everything the agent does.
 
 ## Status
 
