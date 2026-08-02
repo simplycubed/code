@@ -12,16 +12,17 @@ import (
 )
 
 type fakeVCS struct {
-	committed    bool
-	commitDone   bool
-	commitErr    error
-	pushDone     bool
-	pushErr      error
-	pushedBranch string
-	syncedBranch string
-	workflows    bool
-	workflowErr  error
-	commitMsg    string
+	committed     bool
+	commitDone    bool
+	commitErr     error
+	pushDone      bool
+	pushErr       error
+	pushedBranch  string
+	syncedBranch  string
+	workflows     bool
+	workflowPaths []string
+	workflowErr   error
+	commitMsg     string
 }
 
 func (f *fakeVCS) Commit(_ context.Context, _, msg string) (bool, error) {
@@ -41,8 +42,17 @@ func (f *fakeVCS) Sync(_ context.Context, _, branch string) error {
 	return nil
 }
 
-func (f *fakeVCS) TouchesWorkflow(_ context.Context, _ string) (bool, error) {
-	return f.workflows, f.workflowErr
+func (f *fakeVCS) WorkflowChanges(_ context.Context, _ string) ([]string, error) {
+	if f.workflowErr != nil {
+		return nil, f.workflowErr
+	}
+	if len(f.workflowPaths) > 0 {
+		return f.workflowPaths, nil
+	}
+	if f.workflows {
+		return []string{".github/workflows/check.yml"}, nil
+	}
+	return nil, nil
 }
 
 func TestOpenPRCommitsAndPushesFirst(t *testing.T) {
@@ -221,7 +231,7 @@ func TestWorkflowEscalationNamesTheAuthenticatedIdentity(t *testing.T) {
 	})
 
 	t.Run("says a GitHub App when the identity is unknown", func(t *testing.T) {
-		if got := workflowPermissionReason(""); !strings.Contains(got, "authenticated as a GitHub App") {
+		if got := workflowPermissionReason("", nil); !strings.Contains(got, "authenticated as a GitHub App") {
 			t.Fatalf("reason = %q, expected the generic form when no login is known", got)
 		}
 	})
@@ -288,4 +298,39 @@ func TestWorkflowPreflightOnlyBlocksWhenAWorkflowActuallyChanged(t *testing.T) {
 			t.Fatal("a failure to decide must not be reported as a workflow-permission problem")
 		}
 	})
+}
+
+// An escalation that names no file asks the reader to trust the agent's own
+// account of what it changed. That is not evidence, and getting it wrong costs
+// a real investigation, so the message must name the paths git actually saw.
+func TestWorkflowEscalationNamesTheFilesThatCausedIt(t *testing.T) {
+	f := &forgefake.Forge{}
+	eng := &Engine{
+		Runner: enginefake.New(enginefake.Step{Summary: "edited a workflow", Apply: writeFixed}),
+		Gate:   gateChecksFile(),
+		Forge:  f,
+		VCS: &fakeVCS{workflowPaths: []string{
+			".github/workflows/check.yml",
+			".github/workflows/release.yml",
+		}},
+		Cfg: Config{
+			WorkDir:                t.TempDir(),
+			Branch:                 "loop/1",
+			WorkflowRestrictedPush: true,
+			SelfLogin:              "acme-code[bot]",
+		},
+	}
+
+	res, err := eng.Run(context.Background(), domain.Issue{Repo: "o/r", Number: 1})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.Outcome != OutcomeBlocked {
+		t.Fatalf("outcome = %s want blocked", res.Outcome)
+	}
+	for _, want := range []string{"`.github/workflows/check.yml`", "`.github/workflows/release.yml`"} {
+		if !strings.Contains(res.Reason, want) {
+			t.Fatalf("reason = %q, expected it to name %s", res.Reason, want)
+		}
+	}
 }
