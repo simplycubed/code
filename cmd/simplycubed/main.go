@@ -459,18 +459,38 @@ func reply(argv []string, body string, stdout io.Writer) error {
 // way — comments simply stop working, with no error anywhere — so it is checked
 // on every run rather than left to be discovered.
 func checkMentionAgreement(repoDir, appName string) error {
-	path := filepath.Join(repoDir, ".github", "workflows", "simplycubed.yml")
-	b, err := os.ReadFile(path)
+	// Find the caller by what it does, not by what it is called. init writes
+	// .github/workflows/simplycubed.yml, but an adopter can rename it, and in
+	// this repository that name belongs to the reusable workflow itself. A check
+	// keyed on the filename would pass on the wrong file, or fail on a valid
+	// install, which is worse than not checking.
+	dir := filepath.Join(repoDir, ".github", "workflows")
+	entries, err := os.ReadDir(dir)
 	if err != nil {
-		// No caller workflow is a valid local setup, not a misconfiguration.
+		// No workflows at all is a valid local setup, not a misconfiguration.
 		return nil
 	}
 	want := "'" + command.MentionFor(appName) + "'"
-	if strings.Contains(string(b), want) {
+	var callers []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		path := filepath.Join(dir, e.Name())
+		b, err := os.ReadFile(path)
+		if err != nil || !strings.Contains(string(b), "simplycubed/code/.github/workflows/simplycubed.yml@") {
+			continue
+		}
+		callers = append(callers, path)
+		if strings.Contains(string(b), want) {
+			return nil
+		}
+	}
+	if len(callers) == 0 {
 		return nil
 	}
 	return fmt.Errorf("%w: .github/simplycubed.yml sets appName %q, but %s does not trigger on %s. Comment commands will never fire. Re-run \"simplycubed init --workflow\" to rewrite the trigger from the config",
-		ErrConfigMissing, appName, path, want)
+		ErrConfigMissing, appName, strings.Join(callers, ", "), want)
 }
 
 func preflightCmd(argv []string, stdout io.Writer) error {

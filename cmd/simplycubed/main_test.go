@@ -1290,7 +1290,11 @@ func TestPreflightCatchesHandleDrift(t *testing.T) {
 		if err := os.MkdirAll(filepath.Dir(wf), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		body := "on: [issue_comment]\njobs:\n  comment:\n    if: startsWith(github.event.comment.body, '" + trigger + "')\n"
+		// Must look like a caller: the check finds it by the reusable-workflow
+		// call, not by filename.
+		body := "on: [issue_comment]\njobs:\n  comment:\n" +
+			"    uses: simplycubed/code/.github/workflows/simplycubed.yml@v0.3.0\n" +
+			"    if: startsWith(github.event.comment.body, '" + trigger + "')\n"
 		if err := os.WriteFile(wf, []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -1416,4 +1420,101 @@ func TestCommandCmdSurfacesConfigProblems(t *testing.T) {
 	if err := commandCmd([]string{"--body"}, &out); err == nil {
 		t.Fatal("--body with no value must be an error")
 	}
+}
+
+// init writes the caller as simplycubed.yml, but an adopter can rename it, and
+// in this repository that name belongs to the reusable workflow itself. The
+// drift check has to find the caller by what it calls, or it passes on the
+// wrong file and fails on a valid install.
+func TestDriftCheckFindsTheCallerByContentNotFilename(t *testing.T) {
+	t.Setenv("SIMPLYCUBED_AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
+	t.Setenv("SIMPLYCUBED_AZURE_OPENAI_API_KEY", "k")
+
+	dir := repoWithConfigBody(t, "gate: make check\nappName: acme-code\n")
+	wfDir := filepath.Join(dir, ".github", "workflows")
+	if err := os.MkdirAll(wfDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A workflow with the canonical name that is not a caller must be ignored.
+	if err := os.WriteFile(filepath.Join(wfDir, "simplycubed.yml"), []byte("on: workflow_call\njobs:\n  run:\n    runs-on: ubuntu-latest\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The real caller, under a different name.
+	caller := "on: [issue_comment]\njobs:\n  comment:\n" +
+		"    uses: simplycubed/code/.github/workflows/simplycubed.yml@v0.3.0\n" +
+		"    if: startsWith(github.event.comment.body, '@acme-code')\n"
+	if err := os.WriteFile(filepath.Join(wfDir, "simplycubed-caller.yml"), []byte(caller), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := preflightCmd([]string{"--repo-dir", dir}, io.Discard); err != nil {
+		t.Fatalf("a renamed caller that agrees must pass: %v", err)
+	}
+}
+
+// The drift check walks .github/workflows/ looking for whatever calls the
+// reusable workflow. Everything it can meet in there has to be handled, because
+// a check that errors on an ordinary repository layout is a check people turn
+// off.
+func TestDriftCheckSkipsWhatIsNotACaller(t *testing.T) {
+	setAzure := func(t *testing.T) {
+		t.Helper()
+		t.Setenv("SIMPLYCUBED_AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
+		t.Setenv("SIMPLYCUBED_AZURE_OPENAI_API_KEY", "k")
+	}
+	repoWithWorkflows := func(t *testing.T, files map[string]string, dirs ...string) string {
+		t.Helper()
+		dir := repoWithConfigBody(t, "gate: make check\nappName: acme-code\n")
+		wfDir := filepath.Join(dir, ".github", "workflows")
+		if err := os.MkdirAll(wfDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		for _, d := range dirs {
+			if err := os.MkdirAll(filepath.Join(wfDir, d), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		for name, body := range files {
+			if err := os.WriteFile(filepath.Join(wfDir, name), []byte(body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return dir
+	}
+	caller := func(trigger string) string {
+		return "on: [issue_comment]\njobs:\n  comment:\n" +
+			"    uses: simplycubed/code/.github/workflows/simplycubed.yml@v0.3.0\n" +
+			"    if: startsWith(github.event.comment.body, '" + trigger + "')\n"
+	}
+	plain := "on: push\njobs:\n  build:\n    runs-on: ubuntu-latest\n"
+
+	t.Run("a directory in there is not a workflow", func(t *testing.T) {
+		setAzure(t)
+		dir := repoWithWorkflows(t, map[string]string{"zz-caller.yml": caller("@acme-code")}, "archive")
+		if err := preflightCmd([]string{"--repo-dir", dir}, io.Discard); err != nil {
+			t.Fatalf("a subdirectory must be skipped, not read: %v", err)
+		}
+	})
+
+	t.Run("unrelated workflows are skipped before the caller is found", func(t *testing.T) {
+		setAzure(t)
+		// "aa" sorts first, so the loop must skip it rather than stop there.
+		dir := repoWithWorkflows(t, map[string]string{
+			"aa-ci.yml":     plain,
+			"zz-caller.yml": caller("@acme-code"),
+		})
+		if err := preflightCmd([]string{"--repo-dir", dir}, io.Discard); err != nil {
+			t.Fatalf("an unrelated workflow must not decide the answer: %v", err)
+		}
+	})
+
+	t.Run("no caller at all is a valid local setup", func(t *testing.T) {
+		setAzure(t)
+		// Running the CLI yourself needs no caller, so workflows that call
+		// nothing must not be reported as drift.
+		dir := repoWithWorkflows(t, map[string]string{"ci.yml": plain})
+		if err := preflightCmd([]string{"--repo-dir", dir}, io.Discard); err != nil {
+			t.Fatalf("no caller is not a misconfiguration: %v", err)
+		}
+	})
 }
