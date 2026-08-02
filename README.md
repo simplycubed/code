@@ -63,9 +63,9 @@ You drive the agent by applying one label and reading the pull request. The bot 
 
 You can also drive it by comment, addressed to the bot at the start of a line:
 
-- `@simplycubed-code go` on an issue starts work on it, the same as applying `sc:go`.
-- `@simplycubed-code address` on a pull request addresses the current review feedback.
-- `@simplycubed-code help` lists what it understands.
+- `/simplycubed go` on an issue starts work on it, the same as applying `sc:go`.
+- `/simplycubed address` on a pull request addresses the current review feedback.
+- `/simplycubed help` lists what it understands.
 
 Only comments from people with write access are acted on, and only a comment that begins with the mention counts, so quoting an earlier comment never re-triggers a run. Note that a plain pull-request comment is not a review: to run the fixer from a review, submit it through **Files changed → Review changes**.
 
@@ -75,7 +75,7 @@ Only comments from people with write access are acted on, and only a comment tha
 flowchart LR
     L["issue labelled sc:go"] --> R["run job"]
     V["review submitted<br/>OWNER, MEMBER or COLLABORATOR"] --> A["address job"]
-    C["comment starting with<br/>@simplycubed-code"] --> P{"verb?"}
+    C["comment starting with<br/>/simplycubed"] --> P{"verb?"}
 
     R --> RC["simplycubed run"]
     A --> AC["simplycubed address"]
