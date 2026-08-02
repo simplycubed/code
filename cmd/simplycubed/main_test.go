@@ -1160,6 +1160,8 @@ func TestAnswerPathEdges(t *testing.T) {
 // false for everyone but us and the preflight never ran where it was needed.
 func TestWorkflowRestrictedPushCoversAnyBotIdentity(t *testing.T) {
 	t.Run("an adopter's own bot is restricted", func(t *testing.T) {
+		t.Setenv("AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
+		t.Setenv("AZURE_OPENAI_API_KEY", "k")
 		t.Setenv("SIMPLYCUBED_SELF_LOGIN", "acme-code[bot]")
 		c, _, err := prepare("run", []string{"--repo-dir", repoWithConfig(t), "--state-dir", t.TempDir(), "o/r#1"})
 		if err != nil {
@@ -1174,6 +1176,8 @@ func TestWorkflowRestrictedPushCoversAnyBotIdentity(t *testing.T) {
 	})
 
 	t.Run("a human running locally is not restricted", func(t *testing.T) {
+		t.Setenv("AZURE_OPENAI_ENDPOINT", "https://r.openai.azure.com")
+		t.Setenv("AZURE_OPENAI_API_KEY", "k")
 		t.Setenv("SIMPLYCUBED_SELF_LOGIN", "")
 		c, _, err := prepare("run", []string{"--repo-dir", repoWithConfig(t), "--state-dir", t.TempDir(), "o/r#1"})
 		if err != nil {
